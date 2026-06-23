@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: moment-line-bot
+    env: node
+    plan: free
+    buildCommand: npm install
+    startCommand: node src/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LINE_CHANNEL_ACCESS_TOKEN
+        sync: false
+      - key: LINE_CHANNEL_SECRET
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: GAS_WEBHOOK_URL
+        sync: false
+      - key: GAS_SECRET_TOKEN
+        sync: false

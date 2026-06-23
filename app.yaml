@@ -1,0 +1,25 @@
+# App Engine Standard 用 (Cloud Functions と同等のコードでデプロイ可能)
+runtime: nodejs20
+
+instance_class: F2
+
+automatic_scaling:
+  min_instances: 0
+  max_instances: 5
+  target_cpu_utilization: 0.65
+
+env_variables:
+  NODE_ENV: 'production'
+  GCP_PROJECT_ID: 'moment-2026-prod'
+  SPREADSHEET_ID: 'your-spreadsheet-id-here'
+  SECRET_OPENAI_API_KEY: 'openai-api-key'
+  SECRET_LINE_CHANNEL_ACCESS_TOKEN: 'line-channel-access-token'
+  SECRET_LINE_CHANNEL_SECRET: 'line-channel-secret'
+  SECRET_APPSHEET_ACCESS_KEY: 'appsheet-access-key'
+  APPSHEET_APP_ID: ''
+  LOG_LEVEL: 'info'
+
+handlers:
+  - url: /.*
+    script: auto
+    secure: always
