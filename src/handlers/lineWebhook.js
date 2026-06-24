@@ -70,10 +70,10 @@ async function handleSingleEvent(event) {
     messages: [{ timestamp, groupId: groupId || 'direct', groupName, userId, text }],
   }).catch(err => logger.error({ err: err.message }, 'GAS ログ送信失敗'));
 
-  // 2. タスク抽出
+  // 2. タスク抽出（グループ名を文脈として渡す）
   let tasks;
   try {
-    tasks = await extractTasks(text);
+    tasks = await extractTasks(text, groupName);
   } catch (err) {
     logger.error({ err: err.message }, 'extractTasks 失敗');
     return;
