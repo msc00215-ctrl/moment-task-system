@@ -1,0 +1,21 @@
+{
+  "model": "claude-opus-4-8",
+  "agents": {
+    "orchestrator": {
+      "model": "claude-opus-4-8",
+      "role": "全体オーケストレーター・重要判断・レビュー"
+    },
+    "planner": {
+      "model": "claude-sonnet-4-6",
+      "role": "タスク分解・spec作成・ドキュメント・進行管理"
+    },
+    "implementer": {
+      "model": "codex",
+      "role": "実装・テスト・デバッグ（spec確定後のみ）"
+    },
+    "processor": {
+      "model": "claude-haiku-4-5-20251001",
+      "role": "要約・分類・フォーマット整理・大量テキスト一次処理"
+    }
+  }
+}
