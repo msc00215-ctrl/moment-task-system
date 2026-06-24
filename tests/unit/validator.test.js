@@ -28,8 +28,11 @@ describe('normalizeExtractedTask', () => {
     expect(normalizeExtractedTask({ task: 'A', assignee: 'B', deadline: '2026-05-10', area: 'C' })).toEqual({
       task: 'A',
       assignee: 'B',
+      department: null,
       deadline: '2026-05-10',
       area: 'C',
+      priority: '中',
+      status: '未着手',
     });
   });
 
@@ -38,8 +41,9 @@ describe('normalizeExtractedTask', () => {
   });
 
   test('null/undefined 入力でも壊れない', () => {
-    expect(normalizeExtractedTask(null)).toEqual({ task: null, assignee: null, deadline: null, area: null });
-    expect(normalizeExtractedTask({})).toEqual({ task: null, assignee: null, deadline: null, area: null });
+    const empty = { task: null, assignee: null, department: null, deadline: null, area: null, priority: '中', status: '未着手' };
+    expect(normalizeExtractedTask(null)).toEqual(empty);
+    expect(normalizeExtractedTask({})).toEqual(empty);
   });
 });
 
