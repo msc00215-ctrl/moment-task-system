@@ -112,10 +112,7 @@ async function handleSingleEvent(event) {
     tasks,
   }).catch(err => logger.error({ err: err.message }, 'GAS タスク送信失敗'));
 
-  // ⑥ LINE返信（個人情報・システム情報を含めない簡潔な内容）
-  if (replyToken) {
-    await safeReply(replyToken, userId, buildReplyMessage(tasks));
-  }
+  // ⑥ 返信なし（黙って登録のみ）
 }
 
 async function fetchGroupName(groupId) {
