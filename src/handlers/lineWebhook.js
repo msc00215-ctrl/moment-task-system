@@ -145,17 +145,6 @@ async function fetchGroupName(groupId) {
   }
 }
 
-function buildReplyMessage(tasks) {
-  const lines = [`✅ ${tasks.length}件のタスクを登録しました`];
-  tasks.slice(0, 3).forEach((t, i) => {
-    lines.push(`${i + 1}. ${t.task}`);
-    if (t.assignee)  lines.push(`   担当: ${t.assignee}`);
-    if (t.deadline)  lines.push(`   期限: ${t.deadline}`);
-    if (t.priority === '高') lines.push(`   ⚠️ 優先度: 高`);
-  });
-  if (tasks.length > 3) lines.push(`   …他 ${tasks.length - 3} 件`);
-  return lines.join('\n');
-}
 
 async function safeReply(replyToken, userId, text) {
   try {
