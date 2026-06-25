@@ -356,3 +356,212 @@ function setupReferenceSheets() {
 
   console.log('参照シートのセットアップ完了');
 }
+
+// ─────────────────────────────────────────────
+// 工程表スプシとの統合セットアップ（1回だけ実行）
+// 既存シートは一切変更しない。新シートのみ追加。
+// ─────────────────────────────────────────────
+
+const SCHEDULE_SPREADSHEET_ID = '1Drp8iWZ1n2YZRid3FqLnH1hzj_Ap5LQd46ZqKauucTY';
+const TASK_SS_URL = 'https://docs.google.com/spreadsheets/d/' + SPREADSHEET_ID + '/edit';
+
+function setupScheduleIntegration() {
+  const ss = SpreadsheetApp.openById(SCHEDULE_SPREADSHEET_ID);
+  setupTaskImportSheet(ss);
+  setupHubSheet(ss);
+  console.log('工程表統合セットアップ完了！');
+}
+
+// ① タスク連携シート（IMPORTRANGE で自動同期）
+function setupTaskImportSheet(ss) {
+  const name = '📊 タスク連携';
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) sheet = ss.insertSheet(name);
+  else sheet.clear();
+
+  const headers = ['最終更新','グループ名','担当者','部署','タスク内容','期限','優先度','ステータス','初回登録','元メッセージ'];
+  sheet.getRange(1, 1, 1, headers.length).setValues([headers])
+    .setFontWeight('bold').setBackground('#1A237E').setFontColor('#FFFFFF');
+  sheet.setFrozenRows(1);
+  sheet.setColumnWidths(1, headers.length, 150);
+
+  // IMPORTRANGE — 初回は工程表側でアクセス許可のクリックが必要
+  sheet.getRange('A2').setFormula(
+    '=IFERROR(IMPORTRANGE("' + SPREADSHEET_ID + '","📋 タスク（現役）!A2:J"),"⚠️ アクセス許可が必要です — このセルをクリック → 許可する")'
+  );
+
+  // 条件付き書式（ステータス色分け）
+  const statusRange = sheet.getRange('H2:H500');
+  const rules = [
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('対応中').setBackground('#FFF9C4').build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('完了').setBackground('#C8E6C9').build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('調整中').setBackground('#FCE4EC').build(),
+    SpreadsheetApp.newConditionalFormatRule()
+      .whenTextEqualTo('未着手').setBackground('#FFFFFF').build(),
+  ];
+  sheet.setConditionalFormatRules(rules);
+  console.log('📊 タスク連携シート作成完了');
+}
+
+// ② HUBシート（表紙） — 工程表の一番左に配置
+function setupHubSheet(ss) {
+  const name = '🏠 HUB';
+  let sheet = ss.getSheetByName(name);
+  if (!sheet) {
+    sheet = ss.insertSheet(name);
+  } else {
+    sheet.clear();
+  }
+  ss.setActiveSheet(sheet);
+  ss.moveActiveSheet(1); // 一番左へ
+  sheet.setTabColor('#2E7D32');
+
+  // 列幅設定
+  sheet.setColumnWidth(1, 20);
+  [2,3,4,5,6,7,8,9,10,11].forEach(c => sheet.setColumnWidth(c, 120));
+  sheet.setColumnWidth(12, 20);
+
+  // ── タイトル ──────────────────────
+  sheet.setRowHeight(1, 20);
+  sheet.setRowHeight(2, 65);
+  sheet.getRange('B2:K2').merge()
+    .setValue('🌿  MOMENT 2026  運営管理HUB')
+    .setFontSize(26).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#1A237E').setFontColor('#FFFFFF');
+
+  sheet.setRowHeight(3, 30);
+  sheet.getRange('B3:K3').merge()
+    .setValue('2026.7.3(FRI) – 7.5(SUN)  |  洞川キャンプ場  |  奈良県天川村')
+    .setFontSize(11).setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#283593').setFontColor('#B3BCF5');
+
+  // ── タスク管理リンクボタン ────────────
+  sheet.setRowHeight(4, 15);
+  sheet.setRowHeight(5, 50);
+  sheet.getRange('B5:K5').merge()
+    .setFormula('=HYPERLINK("' + TASK_SS_URL + '","📋  タスク管理を開く  →  ジュニアが自動記録中")')
+    .setFontSize(15).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#E65100').setFontColor('#FFFFFF');
+
+  // ── エリア別タスク状況 ───────────────
+  sheet.setRowHeight(6, 15);
+  sheet.setRowHeight(7, 32);
+  sheet.getRange('B7:K7').merge()
+    .setValue('📍  エリア別タスク状況（自動更新）')
+    .setFontSize(13).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#E3F2FD').setFontColor('#0D47A1');
+
+  const areas = [
+    { icon:'🎪', name:'メインステージ', dept:'舞台監督' },
+    { icon:'🚪', name:'エントランス',   dept:'エントランス' },
+    { icon:'🔊', name:'音響',          dept:'音響' },
+    { icon:'⚡', name:'電源',          dept:'電源' },
+    { icon:'💡', name:'照明',          dept:'演出・照明' },
+    { icon:'🍺', name:'バー',          dept:'バー' },
+    { icon:'🎠', name:'キッズ',        dept:'キッズ' },
+    { icon:'🔨', name:'設営',          dept:'設営' },
+    { icon:'🛡', name:'警備',          dept:'警備' },
+    { icon:'🧹', name:'清掃',          dept:'清掃' },
+  ];
+
+  const areaRows = [
+    { row: 8,  items: areas.slice(0, 5) },
+    { row: 12, items: areas.slice(5, 10) },
+  ];
+
+  areaRows.forEach(({ row, items }) => {
+    sheet.setRowHeight(row,     38);
+    sheet.setRowHeight(row + 1, 42);
+    sheet.setRowHeight(row + 2, 24);
+    sheet.setRowHeight(row + 3, 8);
+
+    items.forEach((area, i) => {
+      const col = 2 + i * 2; // B,D,F,H,J
+
+      // エリア名
+      sheet.getRange(row, col, 1, 2).merge()
+        .setValue(area.icon + '  ' + area.name)
+        .setFontSize(11).setFontWeight('bold')
+        .setHorizontalAlignment('center').setVerticalAlignment('middle')
+        .setBackground('#1565C0').setFontColor('#FFFFFF');
+
+      // タスク件数
+      const countFormula = '=IFERROR(COUNTIF(\'📊 タスク連携\'!D:D,"' + area.dept + '"),"–")';
+      sheet.getRange(row + 1, col, 1, 2).merge()
+        .setFormula(countFormula)
+        .setFontSize(28).setFontWeight('bold')
+        .setHorizontalAlignment('center').setVerticalAlignment('middle')
+        .setBackground('#E3F2FD').setFontColor('#0D47A1');
+
+      // 「件のタスク」
+      sheet.getRange(row + 2, col, 1, 2).merge()
+        .setValue('件のタスク')
+        .setFontSize(10).setHorizontalAlignment('center')
+        .setBackground('#BBDEFB').setFontColor('#0D47A1');
+    });
+  });
+
+  // ── 目次 ────────────────────────────
+  sheet.setRowHeight(17, 15);
+  sheet.setRowHeight(18, 32);
+  sheet.getRange('B18:K18').merge()
+    .setValue('📚  目次 — シートへのリンク')
+    .setFontSize(13).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#E8F5E9').setFontColor('#1B5E20');
+
+  const tocLinks = [
+    { label: '📋 タスク（現役）',    url: TASK_SS_URL + '#gid=0' },
+    { label: '✅ 完了タスク',        url: TASK_SS_URL },
+    { label: '📦 備品・資材',        url: TASK_SS_URL },
+    { label: '👥 スタッフ',          url: TASK_SS_URL },
+    { label: '📊 タスク連携（本スプシ）', url: SCHEDULE_SHEET_URL },
+    { label: '🔗 リンク集',          url: TASK_SS_URL },
+  ];
+
+  sheet.setRowHeight(19, 36);
+  tocLinks.forEach((item, i) => {
+    const col = 2 + (i % 5) * 2;
+    const row = i < 5 ? 19 : 20;
+    sheet.setRowHeight(row, 36);
+    sheet.getRange(row, col, 1, 2).merge()
+      .setFormula('=HYPERLINK("' + item.url + '","' + item.label + '")')
+      .setFontSize(10).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle')
+      .setBackground('#F1F8E9').setFontColor('#2E7D32')
+      .setBorder(true,true,true,true,false,false,'#A5D6A7', SpreadsheetApp.BorderStyle.SOLID);
+  });
+
+  // ── ジュニア自己紹介 ─────────────────
+  sheet.setRowHeight(21, 15);
+  sheet.setRowHeight(22, 32);
+  sheet.getRange('B22:K22').merge()
+    .setValue('🤖  ジュニアより')
+    .setFontSize(13).setFontWeight('bold')
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBackground('#FFF8E1').setFontColor('#E65100');
+
+  const juniorText =
+    'やあ！MOMENT 2026の現場バディ、ジュニアやで！\n' +
+    'まだまだ未熟者やけど、みんなと一緒に育っていきたいねん🌱\n\n' +
+    '【使い方】「ジュニア」って呼んだ時だけ返事するで。呼ばれてない時は黙って全部メモしてる👂\n\n' +
+    '質問例: 「ジュニア、テントどこ？」「ジュニア、音響の担当誰？」\n' +
+    '教える: 「ジュニア、発電機は電源エリアに2台あるよ」→ 覚えてスプシに登録するで！\n\n' +
+    'みんなの声でジュニアは成長します。一緒に最高のMOMENT作ろう！';
+
+  sheet.setRowHeight(23, 150);
+  sheet.getRange('B23:K23').merge()
+    .setValue(juniorText)
+    .setFontSize(11).setVerticalAlignment('middle')
+    .setWrap(true)
+    .setBackground('#FFFDE7').setFontColor('#4E342E');
+
+  sheet.setRowHeight(24, 20);
+  console.log('🏠 HUBシート作成完了');
+}
