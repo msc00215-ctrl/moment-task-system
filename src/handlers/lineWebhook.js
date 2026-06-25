@@ -9,7 +9,7 @@
  * - Botの返答に個人情報・システム情報を含めない
  */
 const { verifyLineSignature } = require('../middleware/lineSignature');
-const { extractTasks } = require('../services/openaiService');
+const { extractTasks, generateResponse } = require('../services/openaiService');
 const { reply } = require('../services/lineService');
 const { postToGas } = require('../services/gasService');
 const { assertRequired } = require('../config');
@@ -99,20 +99,32 @@ async function handleSingleEvent(event) {
     return;
   }
 
-  if (!tasks || tasks.length === 0) return;
+  // ⑤ タスクがある → Sheetsに黙って保存、返信なし
+  if (tasks && tasks.length > 0) {
+    await postToGas({
+      type: 'task',
+      groupName,
+      groupId: groupId || 'direct',
+      userId,
+      originalText: maskedText,
+      timestamp,
+      tasks,
+    }).catch(err => logger.error({ err: err.message }, 'GAS タスク送信失敗'));
+    return; // 返信なし
+  }
 
-  // ⑤ Sheetsへの保存（元メッセージもマスキング済みで送る）
-  await postToGas({
-    type: 'task',
-    groupName,
-    groupId: groupId || 'direct',
-    userId,
-    originalText: maskedText,
-    timestamp,
-    tasks,
-  }).catch(err => logger.error({ err: err.message }, 'GAS タスク送信失敗'));
-
-  // ⑥ 返信なし（黙って登録のみ）
+  // ⑥ タスクなし → 質問・会話として応答を生成
+  if (!replyToken) return;
+  let response;
+  try {
+    response = await generateResponse(text, groupName);
+  } catch (err) {
+    logger.error({ err: err.message }, '応答生成失敗');
+    return;
+  }
+  if (response) {
+    await safeReply(replyToken, userId, response);
+  }
 }
 
 async function fetchGroupName(groupId) {
