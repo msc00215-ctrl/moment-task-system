@@ -113,22 +113,7 @@ async function handleSingleEvent(event) {
     return; // 返信なし
   }
 
-  // ⑥ タスクなし → 備品・スタッフ情報をコンテキストに加えて質問応答
-  if (!replyToken) return;
-  let response;
-  try {
-    const [equipment, staff] = await Promise.all([
-      getSheetData('equipment'),
-      getSheetData('staff'),
-    ]);
-    response = await generateResponse(text, groupName, { equipment, staff });
-  } catch (err) {
-    logger.error({ err: err.message }, '応答生成失敗');
-    return;
-  }
-  if (response) {
-    await safeReply(replyToken, userId, response);
-  }
+  // ⑥ 質問応答は一時停止中
 }
 
 async function fetchGroupName(groupId) {
