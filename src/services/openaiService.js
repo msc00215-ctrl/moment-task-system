@@ -199,10 +199,10 @@ async function extractTask(text) {
 // 質問応答（タスク抽出後、タスクがない場合に呼ばれる）
 // ─────────────────────────────────────────────
 
-const RESPONSE_SYSTEM_PROMPT = `あなたはMOMENT 2026のLINEアシスタントです。
-スタッフ・ボランティアからの質問に、公開情報の範囲内で丁寧かつ簡潔に日本語で答えてください。
+const RESPONSE_SYSTEM_PROMPT_BASE = `あなたはMOMENT 2026の運営アシスタントBotです。
+スタッフ・ボランティアからの質問に、以下の情報をもとに丁寧かつ簡潔に日本語で答えてください。
 
-【MOMENT 2026 公開情報】
+【MOMENT 2026 基本情報】
 イベント名: MOMENT 2026
 開催日: 2026年7月3日(金)〜7月5日(日)
 場所: 洞川キャンプ場（奈良県吉野郡天川村）
@@ -211,7 +211,7 @@ const RESPONSE_SYSTEM_PROMPT = `あなたはMOMENT 2026のLINEアシスタント
 After終了: 7月5日(日) 23:30
 撤収開始: 7月6日(月) 7:00〜
 
-設営スケジュール（主要タイムライン）:
+設営スケジュール:
 - 6/29(月): 10:00 倉庫積み込み / 15:00 会場入り・テント設営
 - 6/30(火): 8:00 備品荷下ろし・資材運搬
 - 7/1(水): 8:00 エントランス設営・投光器設置
@@ -219,24 +219,54 @@ After終了: 7月5日(日) 23:30
 - 7/3(金): 9:00 ゲートオープン / 15:00 開演
 
 【返答ルール】
-- 上記の公開情報の範囲内でのみ回答する
-- 他スタッフの個人情報・連絡先・タスク内容は絶対に教えない
+- 備品の保管場所・スタッフのシフト・担当部署は積極的に案内する
+- 電話番号・メールアドレスなどの個人連絡先は絶対に教えない
 - 財務・出演料・契約情報は答えない
-- わからない・公開情報にない内容は「詳細は担当者にご確認ください」と案内する
-- タスク登録は「自動で記録されています」と伝えるだけ（詳細は言わない）
+- 情報にない内容は「担当者にご確認ください」と案内する
+- タスク登録は「自動で記録されています」と伝えるだけ
 - 返答は3〜5文以内でフレンドリーかつ簡潔に
 - 絵文字は1〜2個まで`;
+
+function buildResponseSystemPrompt(context = {}) {
+  const { equipment = [], staff = [] } = context;
+  let ctx = '';
+
+  if (equipment.length > 0) {
+    const lines = equipment.map(e => {
+      const qty  = e.quantity ? `${e.quantity}${e.unit || ''}` : '';
+      const loc  = e.location || '未登録';
+      const dept = e.department ? ` [${e.department}]` : '';
+      const note = e.notes ? ` ※${e.notes}` : '';
+      return `- ${e.item}${qty ? `（${qty}）` : ''}: ${loc}${dept}${note}`;
+    });
+    ctx += `\n\n【備品・資材の保管場所】\n${lines.join('\n')}`;
+  }
+
+  if (staff.length > 0) {
+    const lines = staff.map(s => {
+      const shift = [s.shiftStart && `入り:${s.shiftStart}`, s.shiftEnd && `退:${s.shiftEnd}`]
+        .filter(Boolean).join(' ');
+      const note = s.notes ? ` ※${s.notes}` : '';
+      return `- ${s.name}（${s.department}）${s.role ? ` / ${s.role}` : ''}${shift ? ` / ${shift}` : ''}${note}`;
+    });
+    ctx += `\n\n【スタッフ・シフト情報】\n${lines.join('\n')}`;
+  }
+
+  return RESPONSE_SYSTEM_PROMPT_BASE + ctx;
+}
 
 /**
  * 質問への自然言語応答を生成する
  * @param {string} text - ユーザーのメッセージ
  * @param {string|null} groupName - LINEグループ名
- * @returns {Promise<string|null>} 応答文字列、または応答不要なら null
+ * @param {{ equipment?: Array, staff?: Array }} context - シートから取得したコンテキスト
+ * @returns {Promise<string|null>}
  */
-async function generateResponse(text, groupName = null) {
+async function generateResponse(text, groupName = null, context = {}) {
   if (!text || typeof text !== 'string') return null;
 
-  const userContent = groupName
+  const systemPrompt = buildResponseSystemPrompt(context);
+  const userContent  = groupName
     ? `グループ:「${groupName}」\nメッセージ:「${text}」`
     : `メッセージ:「${text}」`;
 
@@ -247,19 +277,17 @@ async function generateResponse(text, groupName = null) {
         client.chat.completions.create({
           model: 'gpt-4o',
           messages: [
-            { role: 'system', content: RESPONSE_SYSTEM_PROMPT },
+            { role: 'system', content: systemPrompt },
             { role: 'user',   content: userContent },
           ],
           temperature: 0.4,
-          max_tokens: 300,
+          max_tokens: 400,
         }),
       { retries: 1 },
     );
 
     const response = completion.choices?.[0]?.message?.content?.trim();
     if (!response) return null;
-
-    // 「応答不要」と判断した場合はnullを返す
     if (response === 'SKIP' || response.length < 5) return null;
 
     return response;

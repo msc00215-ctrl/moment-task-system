@@ -11,7 +11,7 @@
 const { verifyLineSignature } = require('../middleware/lineSignature');
 const { extractTasks, generateResponse } = require('../services/openaiService');
 const { reply } = require('../services/lineService');
-const { postToGas } = require('../services/gasService');
+const { postToGas, getSheetData } = require('../services/gasService');
 const { assertRequired } = require('../config');
 const { logger } = require('../utils/logger');
 const { maskPII, isDataQuery, checkRateLimit } = require('../utils/security');
@@ -113,11 +113,15 @@ async function handleSingleEvent(event) {
     return; // 返信なし
   }
 
-  // ⑥ タスクなし → 質問・会話として応答を生成
+  // ⑥ タスクなし → 備品・スタッフ情報をコンテキストに加えて質問応答
   if (!replyToken) return;
   let response;
   try {
-    response = await generateResponse(text, groupName);
+    const [equipment, staff] = await Promise.all([
+      getSheetData('equipment'),
+      getSheetData('staff'),
+    ]);
+    response = await generateResponse(text, groupName, { equipment, staff });
   } catch (err) {
     logger.error({ err: err.message }, '応答生成失敗');
     return;
