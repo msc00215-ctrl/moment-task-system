@@ -3,12 +3,13 @@
  * - 個人情報マスキング
  * - データ参照コマンドの検出
  * - レート制限
+ * - ジュニア呼び出し検出
  */
 
 // ─── 個人情報マスキング ───────────────────────────────
 
 const PHONE_RE = /(\b0\d{1,4}[-\s]?\d{1,4}[-\s]?\d{3,4}\b)/g;
-const EMAIL_RE = /[\w.+\-]+@[\w\-]+\.[a-zA-Z]{2,}/g;
+const EMAIL_RE = /[\w.+\-]+@[\w\-]+(\.[\w\-]+)+/g; // .co.jp など多段ドメインも対応
 const ADDR_RE  = /〒?\d{3}[-\s]?\d{4}/g; // 郵便番号
 
 function maskPII(text) {
@@ -66,10 +67,11 @@ setInterval(() => {
   }
 }, 5 * 60_000);
 
-module.exports = { maskPII, isDataQuery, checkRateLimit, isJuniorMention };
-
 // ─── ジュニア呼び出し検出 ─────────────────────────────
+
 function isJuniorMention(text) {
   if (!text) return false;
   return /ジュニア|junior/i.test(text);
 }
+
+module.exports = { maskPII, isDataQuery, checkRateLimit, isJuniorMention };
