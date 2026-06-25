@@ -63,23 +63,15 @@ async function handleSingleEvent(event) {
 
   logger.info({ sourceType, groupName, textLen: text.length }, 'メッセージ受信');
 
-  // ① レート制限チェック（1ユーザー1分10件まで）
+  // ① レート制限チェック（返信なし・ログのみ）
   if (!checkRateLimit(userId)) {
     logger.warn({ userId }, 'レート制限超過');
-    if (replyToken) {
-      await safeReply(replyToken, userId,
-        '⚠️ 短時間に多くのメッセージが送信されました。少し待ってから再送してください。');
-    }
     return;
   }
 
-  // ② データ参照コマンドのブロック（内部情報の漏洩防止）
+  // ② データ参照コマンドのブロック（返信なし・ログのみ）
   if (isDataQuery(text)) {
     logger.info({ userId, groupName }, 'データ参照コマンドをブロック');
-    if (replyToken) {
-      await safeReply(replyToken, userId,
-        '🔒 このBotはタスクの登録専用です。\n情報の参照は管理者にお問い合わせください。');
-    }
     return;
   }
 
