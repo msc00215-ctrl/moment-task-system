@@ -59,6 +59,8 @@ function doPost(e) {
       writeLineLog(ss, data.messages || []);
     } else if (data.type === 'task') {
       upsertTasks(ss, data);
+    } else if (data.type === 'equipment') {
+      upsertEquipment(ss, data);
     }
 
     return jsonResponse({ ok: true });
@@ -271,6 +273,32 @@ function setupSecretToken() {
   const token = 'moment2026_' + Math.random().toString(36).slice(2, 10);
   PropertiesService.getScriptProperties().setProperty('GAS_SECRET_TOKEN', token);
   console.log('GAS_SECRET_TOKEN を設定しました:', token);
+}
+
+// ─────────────────────────────────────────────
+// 備品: ジュニアが会話から学習して upsert
+// ─────────────────────────────────────────────
+
+function upsertEquipment(ss, data) {
+  const sheet    = getOrCreateSheet(ss, SHEET_EQUIPMENT, EQUIPMENT_HEADERS);
+  const item     = (data.item     || '').trim();
+  const location = (data.location || '').trim();
+  if (!item || !location) return;
+
+  const rows = sheet.getDataRange().getValues();
+  let existingIdx = -1;
+  for (let i = 1; i < rows.length; i++) {
+    if ((rows[i][0] || '').trim() === item) { existingIdx = i; break; }
+  }
+
+  const row = [item, data.category||'', data.quantity||'', data.unit||'',
+               location, data.department||'', data.notes||''];
+
+  if (existingIdx >= 0) {
+    sheet.getRange(existingIdx + 1, 1, 1, row.length).setValues([row]);
+  } else {
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+  }
 }
 
 function setupReferenceSheets() {

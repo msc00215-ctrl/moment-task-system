@@ -66,4 +66,10 @@ setInterval(() => {
   }
 }, 5 * 60_000);
 
-module.exports = { maskPII, isDataQuery, checkRateLimit };
+module.exports = { maskPII, isDataQuery, checkRateLimit, isJuniorMention };
+
+// ─── ジュニア呼び出し検出 ─────────────────────────────
+function isJuniorMention(text) {
+  if (!text) return false;
+  return /ジュニア|junior/i.test(text);
+}

@@ -1,20 +1,19 @@
 /**
- * LINE Webhook ハンドラ（Render 版）
+ * LINE Webhook ハンドラ
  *
- * セキュリティ対策:
- * - LINE署名検証（不正リクエストを401で弾く）
- * - レート制限（1ユーザー1分10件まで）
- * - データ参照コマンドのブロック
- * - ログ保存前に個人情報（電話番号・メール）をマスキング
- * - Botの返答に個人情報・システム情報を含めない
+ * 動作フロー:
+ * 1. 全メッセージ → ログ記録 + タスク自動抽出（無言）
+ * 2. 「ジュニア」と呼ばれた時だけ → ジュニアが返答
+ *    - 備品情報を教えてもらった → シートに保存して確認返信
+ *    - 質問 → スタッフ/備品/スケジュール情報をもとに回答
  */
 const { verifyLineSignature } = require('../middleware/lineSignature');
-const { extractTasks, generateResponse } = require('../services/openaiService');
+const { extractTasks, generateJuniorResponse, extractEquipmentInfo } = require('../services/openaiService');
 const { reply } = require('../services/lineService');
 const { postToGas, getSheetData } = require('../services/gasService');
 const { assertRequired } = require('../config');
 const { logger } = require('../utils/logger');
-const { maskPII, isDataQuery, checkRateLimit } = require('../utils/security');
+const { maskPII, checkRateLimit, isJuniorMention } = require('../utils/security');
 
 const groupNameCache = new Map();
 
@@ -63,37 +62,29 @@ async function handleSingleEvent(event) {
 
   logger.info({ sourceType, groupName, textLen: text.length }, 'メッセージ受信');
 
-  // ① レート制限チェック（返信なし・ログのみ）
+  // ① レート制限
   if (!checkRateLimit(userId)) {
     logger.warn({ userId }, 'レート制限超過');
     return;
   }
 
-  // ② データ参照コマンドのブロック（返信なし・ログのみ）
-  if (isDataQuery(text)) {
-    logger.info({ userId, groupName }, 'データ参照コマンドをブロック');
-    return;
-  }
-
-  // ③ 個人情報マスキングしてからログ保存
+  // ② 全メッセージをログ保存（PII マスク済み）
   const maskedText = maskPII(text);
   postToGas({
     type: 'lineLog',
     messages: [{ timestamp, groupId: groupId || 'direct', groupName, userId, text: maskedText }],
   }).catch(err => logger.error({ err: err.message }, 'GAS ログ送信失敗'));
 
-  // ④ タスク抽出（元テキストをAIに渡す。PIIはOpenAIプロンプトで除外指示済み）
+  // ③ タスク抽出（常に・無言）
   let tasks;
   try {
     tasks = await extractTasks(text, groupName);
   } catch (err) {
     logger.error({ err: err.message }, 'extractTasks 失敗');
-    return;
   }
 
-  // ⑤ タスクがある → Sheetsに黙って保存、返信なし
   if (tasks && tasks.length > 0) {
-    await postToGas({
+    postToGas({
       type: 'task',
       groupName,
       groupId: groupId || 'direct',
@@ -102,10 +93,48 @@ async function handleSingleEvent(event) {
       timestamp,
       tasks,
     }).catch(err => logger.error({ err: err.message }, 'GAS タスク送信失敗'));
-    return; // 返信なし
   }
 
-  // ⑥ 質問応答は一時停止中
+  // ④ 「ジュニア」が呼ばれていない → 終了（返答なし）
+  if (!isJuniorMention(text) || !replyToken) return;
+
+  // ⑤ 備品情報を教えてもらったか確認
+  let equipInfo;
+  try {
+    equipInfo = await extractEquipmentInfo(text);
+  } catch {
+    equipInfo = { found: false };
+  }
+
+  if (equipInfo?.found && equipInfo.item && equipInfo.location) {
+    postToGas({
+      type: 'equipment',
+      item:       equipInfo.item,
+      category:   equipInfo.category   || '',
+      quantity:   equipInfo.quantity   ?? '',
+      unit:       equipInfo.unit       || '',
+      location:   equipInfo.location,
+      department: equipInfo.department || '',
+      notes:      equipInfo.notes      || '',
+    }).catch(err => logger.error({ err: err.message }, 'GAS 備品登録失敗'));
+
+    const qty = equipInfo.quantity ? `${equipInfo.quantity}${equipInfo.unit || ''}` : '';
+    await safeReply(replyToken, userId,
+      `覚えたで！${equipInfo.item}${qty ? `（${qty}）` : ''} → ${equipInfo.location}やな🌱`);
+    return;
+  }
+
+  // ⑥ ジュニア Q&A
+  try {
+    const [equipment, staff] = await Promise.all([
+      getSheetData('equipment'),
+      getSheetData('staff'),
+    ]);
+    const response = await generateJuniorResponse(text, groupName, { equipment, staff });
+    if (response) await safeReply(replyToken, userId, response);
+  } catch (err) {
+    logger.error({ err: err.message }, 'Junior応答失敗');
+  }
 }
 
 async function fetchGroupName(groupId) {
@@ -121,7 +150,6 @@ async function fetchGroupName(groupId) {
     return groupId;
   }
 }
-
 
 async function safeReply(replyToken, userId, text) {
   try {

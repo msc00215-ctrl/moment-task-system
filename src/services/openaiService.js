@@ -297,4 +297,131 @@ async function generateResponse(text, groupName = null, context = {}) {
   }
 }
 
-module.exports = { extractTask, extractTasks, generateResponse };
+// ─────────────────────────────────────────────
+// ジュニア — キャラクター応答
+// ─────────────────────────────────────────────
+
+const JUNIOR_BASE_PROMPT = `あなたはMOMENT 2026の現場バディ「ジュニア」です。
+
+【キャラクター】
+まだ生まれたてのAIバディ。みんなに育ててもらいながら成長していく存在。
+親しみやすく温かいタメ口。関西弁ベースやけどきつくない。
+「横にいる頼れるツレ」のスタンス。誰一人置いてきぼりにしない。
+
+【返答ルール】
+- 3〜4文以内で簡潔に
+- 知らないことは「それはまだわからんわ！誰か教えてくれへん？」と素直に言う
+- 個人の連絡先・財務情報は絶対に答えない
+- 絵文字は1〜2個まで
+- タメ口・フレンドリーに`;
+
+function buildJuniorSystemPrompt(context = {}) {
+  const { equipment = [], staff = [] } = context;
+  let ctx = '';
+
+  if (equipment.length > 0) {
+    const lines = equipment.map(e => {
+      const qty = e.quantity ? `${e.quantity}${e.unit || ''}` : '';
+      return `- ${e.item}${qty ? `（${qty}）` : ''}: ${e.location}${e.department ? ` [${e.department}]` : ''}`;
+    });
+    ctx += `\n\n【知ってる備品・資材の場所】\n${lines.join('\n')}`;
+  }
+
+  if (staff.length > 0) {
+    const lines = staff.map(s => {
+      const shift = [s.shiftStart && `入り:${s.shiftStart}`, s.shiftEnd && `退:${s.shiftEnd}`]
+        .filter(Boolean).join(' ');
+      return `- ${s.name}（${s.department}）${shift ? ` / ${shift}` : ''}`;
+    });
+    ctx += `\n\n【スタッフ情報】\n${lines.join('\n')}`;
+  }
+
+  return JUNIOR_BASE_PROMPT + ctx;
+}
+
+async function generateJuniorResponse(text, groupName = null, context = {}) {
+  if (!text || typeof text !== 'string') return null;
+
+  const systemPrompt = buildJuniorSystemPrompt(context);
+  const userContent  = groupName
+    ? `グループ:「${groupName}」\nメッセージ:「${text}」`
+    : `メッセージ:「${text}」`;
+
+  try {
+    const client = await getClient();
+    const completion = await withRetry(
+      () => client.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user',   content: userContent },
+        ],
+        temperature: 0.6,
+        max_tokens: 200,
+      }),
+      { retries: 1 },
+    );
+
+    const response = completion.choices?.[0]?.message?.content?.trim();
+    if (!response || response.length < 5) return null;
+    return response;
+  } catch (err) {
+    logger.error({ err: err.message }, 'Junior応答生成失敗');
+    return null;
+  }
+}
+
+// ─────────────────────────────────────────────
+// ジュニア — 備品情報の抽出（会話から学習）
+// ─────────────────────────────────────────────
+
+const EQUIPMENT_EXTRACT_PROMPT = `JSONのみを返してください。
+
+メッセージから備品・資材の保管場所情報を抽出します。
+情報が不十分または含まれていない場合は {"found": false} を返してください。
+場所が曖昧な場合（「あそこ」「ここ」等）も {"found": false} を返してください。
+
+出力形式:
+{"found":true,"item":"アイテム名","category":"設営資材|電源機材|什器|消耗品|照明機材|音響機材|その他","quantity":数値またはnull,"unit":"単位またはnull","location":"具体的な保管場所","department":"担当部署またはnull","notes":"備考またはnull"}
+
+例:
+入力:「ジュニア、テント3張は設営エリアのA倉庫にあるよ」
+出力:{"found":true,"item":"テント","category":"設営資材","quantity":3,"unit":"張","location":"設営エリアA倉庫","department":"設営","notes":null}
+
+入力:「ジュニア、音響の担当誰？」
+出力:{"found":false}`;
+
+async function extractEquipmentInfo(text) {
+  if (!text) return { found: false };
+
+  try {
+    const client = await getClient();
+    const completion = await withRetry(
+      () => client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: EQUIPMENT_EXTRACT_PROMPT },
+          { role: 'user',   content: text },
+        ],
+        temperature: 0,
+        response_format: { type: 'json_object' },
+        max_tokens: 200,
+      }),
+      { retries: 1 },
+    );
+
+    const content = completion.choices?.[0]?.message?.content;
+    if (!content) return { found: false };
+
+    try {
+      return JSON.parse(content);
+    } catch {
+      return { found: false };
+    }
+  } catch (err) {
+    logger.warn({ err: err.message }, '備品情報抽出失敗');
+    return { found: false };
+  }
+}
+
+module.exports = { extractTask, extractTasks, generateResponse, generateJuniorResponse, extractEquipmentInfo };
