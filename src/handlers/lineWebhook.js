@@ -126,11 +126,12 @@ async function handleSingleEvent(event) {
 
   // ⑥ ジュニア Q&A
   try {
-    const [equipment, staff] = await Promise.all([
+    const [equipment, staff, vendors] = await Promise.all([
       getSheetData('equipment'),
       getSheetData('staff'),
+      getSheetData('vendor'),
     ]);
-    const response = await generateJuniorResponse(text, groupName, { equipment, staff });
+    const response = await generateJuniorResponse(text, groupName, { equipment, staff, vendors });
     if (response) await safeReply(replyToken, userId, response);
   } catch (err) {
     logger.error({ err: err.message }, 'Junior応答失敗');

@@ -7,6 +7,7 @@
  *   📱 LINEリアルタイム ← 直近500件のみ保持（古いものは自動削除）
  *   📦 備品・資材      ← 備品の保管場所・数量管理
  *   👥 スタッフ        ← スタッフ名・部署・シフト管理
+ *   🛍️ 出店リスト      ← 飲食・物販の出店情報（エントランスで活用）
  *   🔗 リンク集        ← 関連スプレッドシートへのリンク
  *
  * デプロイ手順:
@@ -24,6 +25,7 @@ const SHEET_DONE       = '✅ 完了タスク';
 const SHEET_LINE_LOG   = '📱 LINEリアルタイム';
 const SHEET_EQUIPMENT  = '📦 備品・資材';
 const SHEET_STAFF      = '👥 スタッフ';
+const SHEET_VENDORS    = '🛍️ 出店リスト';
 const SHEET_LINKS      = '🔗 リンク集';
 const LINE_LOG_MAX     = 500;
 
@@ -34,6 +36,7 @@ const TASK_HEADERS = [
 const LINE_HEADERS = ['タイムスタンプ', 'グループ名', 'ユーザーID', 'メッセージ'];
 const EQUIPMENT_HEADERS = ['アイテム名', 'カテゴリ', '数量', '単位', '保管場所', '担当部署', '備考'];
 const STAFF_HEADERS     = ['名前', '部署', '役割', '入り日時', '退場日時', '備考'];
+const VENDOR_HEADERS    = ['店名', 'カテゴリ', '場所', '営業時間', 'メニュー・商品', '担当者', '備考'];
 const LINKS_HEADERS     = ['タイトル', 'URL', '説明'];
 
 const COL = {
@@ -91,6 +94,9 @@ function doGet(e) {
     if (type === 'staff') {
       return jsonResponse({ ok: true, data: getStaffData(ss) });
     }
+    if (type === 'vendor') {
+      return jsonResponse({ ok: true, data: getVendorData(ss) });
+    }
 
     return jsonResponse({ ok: false, error: 'unknown type' });
   } catch (err) {
@@ -129,6 +135,23 @@ function getStaffData(ss) {
       shiftStart: r[3] ? String(r[3]) : '',
       shiftEnd:   r[4] ? String(r[4]) : '',
       notes:      r[5] || '',
+    }));
+}
+
+function getVendorData(ss) {
+  const sheet = ss.getSheetByName(SHEET_VENDORS);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, VENDOR_HEADERS.length).getValues();
+  return rows
+    .filter(r => r[0])
+    .map(r => ({
+      name:     r[0] || '',
+      category: r[1] || '',
+      location: r[2] || '',
+      hours:    r[3] || '',
+      menu:     r[4] || '',
+      contact:  r[5] || '',
+      notes:    r[6] || '',
     }));
 }
 
@@ -342,6 +365,17 @@ function setupReferenceSheets() {
       ['濵田隆史', '撮影', 'カメラマン', '7/3', '7/5', '池上・井原と連携'],
     ];
     staffSheet.getRange(2, 1, samples.length, STAFF_HEADERS.length).setValues(samples);
+  }
+
+  // 出店リストシート
+  const vendorSheet = getOrCreateSheet(ss, SHEET_VENDORS, VENDOR_HEADERS);
+  if (vendorSheet.getLastRow() < 2) {
+    const samples = [
+      ['', 'フード', '', '', '', '', '※情報を入力してください'],
+      ['', 'ドリンク', '', '', '', '', '※情報を入力してください'],
+      ['', '物販', '', '', '', '', '※情報を入力してください'],
+    ];
+    vendorSheet.getRange(2, 1, samples.length, VENDOR_HEADERS.length).setValues(samples);
   }
 
   // リンク集シート

@@ -1,7 +1,7 @@
 /**
  * GAS Web App との通信
  * - doPost: Sheets への書き込みプロキシ
- * - doGet:  備品・スタッフデータの読み取り（10分キャッシュ）
+ * - doGet:  備品・スタッフ・出店データの読み取り（10分キャッシュ）
  */
 const { env } = require('../config');
 const { logger } = require('../utils/logger');
@@ -45,7 +45,7 @@ const CACHE_TTL = 10 * 60_000;
 
 /**
  * GAS doGet からシートデータを取得（キャッシュあり）
- * @param {'equipment'|'staff'} type
+ * @param {'equipment'|'staff'|'vendor'} type
  * @returns {Promise<Array>}
  */
 async function getSheetData(type) {

@@ -316,7 +316,7 @@ const JUNIOR_BASE_PROMPT = `あなたはMOMENT 2026の現場バディ「ジュ�
 - タメ口・フレンドリーに`;
 
 function buildJuniorSystemPrompt(context = {}) {
-  const { equipment = [], staff = [] } = context;
+  const { equipment = [], staff = [], vendors = [] } = context;
   let ctx = '';
 
   if (equipment.length > 0) {
@@ -334,6 +334,16 @@ function buildJuniorSystemPrompt(context = {}) {
       return `- ${s.name}（${s.department}）${shift ? ` / ${shift}` : ''}`;
     });
     ctx += `\n\n【スタッフ情報】\n${lines.join('\n')}`;
+  }
+
+  if (vendors.length > 0) {
+    const lines = vendors
+      .filter(v => v.name)
+      .map(v => {
+        const parts = [v.location && `場所:${v.location}`, v.hours && `時間:${v.hours}`, v.menu && `メニュー:${v.menu}`].filter(Boolean);
+        return `- ${v.name}（${v.category}）${parts.length ? ` / ${parts.join(' / ')}` : ''}`;
+      });
+    if (lines.length > 0) ctx += `\n\n【出店情報】\n${lines.join('\n')}`;
   }
 
   return JUNIOR_BASE_PROMPT + ctx;
