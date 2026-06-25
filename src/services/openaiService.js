@@ -154,7 +154,7 @@ async function extractTasks(text, groupName = null) {
     const completion = await withRetry(
       () =>
         client.chat.completions.create({
-          model: 'gpt-4o',
+          model: 'gpt-4o-mini',
           messages: [
             { role: 'system', content: SYSTEM_PROMPT },
             { role: 'user', content: userContent },
