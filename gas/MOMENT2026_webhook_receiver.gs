@@ -17,6 +17,7 @@
  */
 
 const SPREADSHEET_ID   = '1kPCg1fbYfRxrWs7VwALrLAOo4oqONGgLAn3grhYvUfQ';
+const ARTIST_SS_ID     = '1h7HV6ZfnDElblK4nJ_dbtKgAOaNnB1olv2A7946GjYo'; // Antigravity アーティストケア
 const SCHEDULE_SHEET_URL = 'https://docs.google.com/spreadsheets/d/1Drp8iWZ1n2YZRid3FqLnH1hzj_Ap5LQd46ZqKauucTY/edit';
 const SECRET_TOKEN     = PropertiesService.getScriptProperties().getProperty('GAS_SECRET_TOKEN') || '';
 
@@ -97,6 +98,9 @@ function doGet(e) {
     if (type === 'vendor') {
       return jsonResponse({ ok: true, data: getVendorData(ss) });
     }
+    if (type === 'artist') {
+      return jsonResponse({ ok: true, data: getArtistData() });
+    }
 
     return jsonResponse({ ok: false, error: 'unknown type' });
   } catch (err) {
@@ -136,6 +140,65 @@ function getStaffData(ss) {
       shiftEnd:   r[4] ? String(r[4]) : '',
       notes:      r[5] || '',
     }));
+}
+
+/**
+ * Antigravityスプシからアーティスト出演・宿泊情報を取得（読み取り専用）
+ * 個人連絡先（電話・メール）は除外してジュニアに渡す
+ */
+function getArtistData() {
+  try {
+    const ss    = SpreadsheetApp.openById(ARTIST_SS_ID);
+    const sheet = ss.getSheetByName('アーティスト管理');
+    if (!sheet || sheet.getLastRow() < 2) return [];
+
+    const allData = sheet.getDataRange().getValues();
+
+    // ヘッダー行を特定
+    let headerIdx = -1;
+    for (let i = 0; i < Math.min(10, allData.length); i++) {
+      if (allData[i].some(c => String(c).trim() === 'アーティスト名')) {
+        headerIdx = i;
+        break;
+      }
+    }
+    if (headerIdx < 0) return [];
+
+    const headers = allData[headerIdx];
+    const col = name => headers.findIndex(h => String(h).includes(name));
+
+    const cols = {
+      name:        col('アーティスト名'),
+      perfTime:    col('出演時間'),
+      stage:       col('ステージ'),
+      stayType:    col('宿泊タイプ'),
+      hotel:       col('宿名'),
+      checkIn:     col('チェックイン'),
+      checkOut:    col('チェックアウト'),
+      arrivalSpot: col('迎え場所'),
+      arrivalTime: col('迎え日時'),
+      careStaff:   col('ケア担当'),
+      notes:       col('備考・特記事項'),
+    };
+
+    return allData.slice(headerIdx + 1)
+      .filter(r => cols.name >= 0 && r[cols.name] && String(r[cols.name]).trim())
+      .map(r => ({
+        name:        String(r[cols.name]        || '').trim(),
+        stage:       String(r[cols.stage]       || '').trim(),
+        perfTime:    String(r[cols.perfTime]    || '').trim(),
+        stayType:    String(r[cols.stayType]    || '').trim(),
+        hotel:       String(r[cols.hotel]       || '').trim(),
+        checkIn:     String(r[cols.checkIn]     || '').trim(),
+        checkOut:    String(r[cols.checkOut]    || '').trim(),
+        arrivalTime: String(r[cols.arrivalTime] || '').trim(),
+        careStaff:   String(r[cols.careStaff]   || '').trim(),
+        notes:       String(r[cols.notes]       || '').trim(),
+      }));
+  } catch (err) {
+    console.error('getArtistData エラー:', err.message);
+    return [];
+  }
 }
 
 function getVendorData(ss) {

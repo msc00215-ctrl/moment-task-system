@@ -316,7 +316,7 @@ const JUNIOR_BASE_PROMPT = `あなたはMOMENT 2026の現場バディ「ジュ�
 - タメ口・フレンドリーに`;
 
 function buildJuniorSystemPrompt(context = {}) {
-  const { equipment = [], staff = [], vendors = [] } = context;
+  const { equipment = [], staff = [], vendors = [], artists = [] } = context;
   let ctx = '';
 
   if (equipment.length > 0) {
@@ -344,6 +344,24 @@ function buildJuniorSystemPrompt(context = {}) {
         return `- ${v.name}（${v.category}）${parts.length ? ` / ${parts.join(' / ')}` : ''}`;
       });
     if (lines.length > 0) ctx += `\n\n【出店情報】\n${lines.join('\n')}`;
+  }
+
+  if (artists.length > 0) {
+    const lines = artists
+      .filter(a => a.name && (a.perfTime || a.stage))
+      .map(a => {
+        const parts = [];
+        if (a.perfTime) parts.push(a.perfTime);
+        if (a.stage)    parts.push(`${a.stage}フロア`);
+        if (a.hotel)    parts.push(`宿:${a.hotel}${a.stayType ? `（${a.stayType}）` : ''}`);
+        if (a.careStaff && a.careStaff !== 'ー' && a.careStaff !== '-') {
+          parts.push(`担当:${a.careStaff}`);
+        }
+        return `- ${a.name}: ${parts.join(' / ')}`;
+      });
+    if (lines.length > 0) {
+      ctx += `\n\n【アーティスト出演・宿泊情報】\n（※連絡先・電話番号は答えないこと）\n${lines.join('\n')}`;
+    }
   }
 
   return JUNIOR_BASE_PROMPT + ctx;

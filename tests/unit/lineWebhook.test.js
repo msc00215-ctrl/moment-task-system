@@ -156,6 +156,19 @@ describe('handleWebhook — ジュニア呼び出し', () => {
     expect(reply).toHaveBeenCalledWith('reply-token-123', expect.stringContaining('コーヒー'), 'U123');
   });
 
+  test('アーティスト情報も含めて Junior に渡される', async () => {
+    const mockArtists = [{ name: 'Kuniyuki', stage: 'MAIN', perfTime: 'DAY2 23:30-01:30', stayType: '旅館', hotel: 'いろは旅館', careStaff: 'MARIA' }];
+    getSheetData.mockImplementation(type => Promise.resolve(type === 'artist' ? mockArtists : []));
+    generateJuniorResponse.mockResolvedValueOnce('Kuniyukiはいろは旅館に泊まってるで！');
+    const req = makeReq('ジュニア、Kuniyukiはどこ泊まってる？');
+    const res = makeRes();
+    await handleWebhook(req, res);
+    await new Promise(r => setTimeout(r, 50));
+    const callArgs = generateJuniorResponse.mock.calls[0];
+    expect(callArgs[2].artists).toEqual(mockArtists);
+    expect(reply).toHaveBeenCalledWith('reply-token-123', expect.stringContaining('いろは旅館'), 'U123');
+  });
+
   test('備品情報あり → GASに登録して確認返信', async () => {
     extractEquipmentInfo.mockResolvedValueOnce({
       found: true, item: '発電機', location: '電源エリアコンテナ',
