@@ -3,14 +3,67 @@
  *
  * 動作フロー:
  * 1. 全メッセージ → ログ記録 + タスク自動抽出（無言）
- * 2. 「ジュニア」と呼ばれた時だけ → ジュニアが返答
+ * 2. DM: 常にジュニアが返答 / グループ: 「ジュニア」と呼ばれた時だけ返答
  *    - 備品情報を教えてもらった → シートに保存して確認返信
  *    - 質問 → スタッフ/備品/スケジュール情報をもとに回答
+ * 3. join イベント: グループ参加時に自己紹介 + 取説をピン止め
  */
 const { verifyLineSignature } = require('../middleware/lineSignature');
 const { extractTasks, generateJuniorResponse, extractEquipmentInfo, extractKnowledge } = require('../services/openaiService');
-const { reply } = require('../services/lineService');
+const { reply, pushMessages, pinMessage } = require('../services/lineService');
 const { postToGas, getSheetData } = require('../services/gasService');
+
+const INTRO_SHORT = `はじめまして！ジュニアです🌟
+MOMENT 2026 の設営・運営をサポートするAIアシスタントやで！
+
+【基本の使い方】
+・「ジュニア、〇〇は？」と呼びかけると答えるで！
+・スプシの情報を自動で学習して成長するんや📈
+・タスクの管理もこっそり手伝ってるよ😊
+
+詳しい使い方は↓の取説を見てな！`;
+
+const INTRO_MANUAL = `📖 ジュニア 取扱説明書（フルバージョン）
+
+━━━━━━━━━━━━━━━━━━
+🔰 基本コマンド
+━━━━━━━━━━━━━━━━━━
+「ジュニア、〇〇は？」→ 質問に答えるで
+「ジュニア、〇〇はXXに決まったよ」→ 確定情報を覚えるで
+「ジュニア、備品〇〇はBエリアにあるよ」→ 備品場所を記録するで
+
+━━━━━━━━━━━━━━━━━━
+📋 タスク管理（ステルス機能）
+━━━━━━━━━━━━━━━━━━
+グループのトーク内容から自動でタスクを抽出してスプシに登録するで（返答なし・バレない）
+→ スプシ「📋 タスク（現役）」シートで確認できるで
+
+━━━━━━━━━━━━━━━━━━
+📚 自動成長（知識ベース）
+━━━━━━━━━━━━━━━━━━
+「〇〇は△△に確定」「〇〇は××でOK」などの決定事項を自動で学習するで
+→ スプシ「📚 確定知識ベース」シートで蓄積内容を確認できるで
+
+━━━━━━━━━━━━━━━━━━
+📦 備品・資材管理
+━━━━━━━━━━━━━━━━━━
+「ジュニア、テント（10張）はBエリアに置いてあるよ」のように教えると記録するで
+→ スプシ「📦 備品・資材」シートで確認できるで
+
+━━━━━━━━━━━━━━━━━━
+👥 スタッフ情報
+━━━━━━━━━━━━━━━━━━
+スタッフの名前・配属チームなどを答えられるで
+※個人の連絡先・財務情報は答えられないよ（セキュリティ上）
+
+━━━━━━━━━━━━━━━━━━
+⚠️ 注意事項
+━━━━━━━━━━━━━━━━━━
+・グループでは「ジュニア」と呼びかけた時だけ返答するで
+・公式アカウントへのDMはいつでも話しかけてOK！
+・スプシを育てるほどジュニアが賢くなるで📈
+
+スプシ管理はHI-Cさんに確認してな🙏`;
 const { assertRequired } = require('../config');
 const { logger } = require('../utils/logger');
 const { maskPII, checkRateLimit, isJuniorMention } = require('../utils/security');
@@ -46,8 +99,34 @@ async function handleWebhook(req, res) {
   });
 }
 
+async function handleJoinEvent(event) {
+  const chatId = event.source?.groupId || event.source?.roomId;
+  if (!chatId) return;
+  logger.info({ chatId }, 'グループ参加 — 自己紹介を送信');
+  try {
+    const sent = await pushMessages(chatId, [
+      { type: 'text', text: INTRO_SHORT },
+      { type: 'text', text: INTRO_MANUAL },
+    ]);
+    const manualMsgId = sent[1]?.id;
+    if (manualMsgId) {
+      await pinMessage(chatId, manualMsgId);
+      logger.info({ chatId, messageId: manualMsgId }, 'ピン止め完了');
+    }
+  } catch (err) {
+    logger.error({ err: err.message }, 'join 自己紹介失敗');
+  }
+}
+
 async function handleSingleEvent(event) {
-  if (!event || event.type !== 'message') return;
+  if (!event) return;
+
+  if (event.type === 'join') {
+    await handleJoinEvent(event);
+    return;
+  }
+
+  if (event.type !== 'message') return;
   if (!event.message || event.message.type !== 'text') return;
 
   const text = (event.message.text || '').trim();
@@ -109,8 +188,10 @@ async function handleSingleEvent(event) {
     }
   }).catch(err => logger.error({ err: err.message }, 'GAS 知識登録失敗'));
 
-  // ④ 「ジュニア」が呼ばれていない → 終了（返答なし）
-  if (!isJuniorMention(text) || !replyToken) return;
+  // ④ DM は常に返答 / グループ・ルームは「ジュニア」メンション必須
+  const isDM = sourceType === 'user';
+  if (!isDM && !isJuniorMention(text)) return;
+  if (!replyToken) return;
 
   // ⑤ 備品情報を教えてもらったか確認
   let equipInfo;

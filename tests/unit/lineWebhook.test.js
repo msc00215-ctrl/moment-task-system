@@ -21,6 +21,8 @@ jest.mock('../../src/services/gasService', () => ({
 
 jest.mock('../../src/services/lineService', () => ({
   reply:           jest.fn().mockResolvedValue(undefined),
+  pushMessages:    jest.fn().mockResolvedValue([]),
+  pinMessage:      jest.fn().mockResolvedValue(undefined),
   getClient:       jest.fn().mockResolvedValue({ getGroupSummary: jest.fn().mockResolvedValue({ groupName: 'テストグループ' }) }),
   getChannelSecret: jest.fn().mockResolvedValue('secret'),
 }));
@@ -38,7 +40,7 @@ jest.mock('../../src/config', () => ({
 const { handleWebhook } = require('../../src/handlers/lineWebhook');
 const { extractTasks, generateJuniorResponse, extractEquipmentInfo, extractKnowledge } = require('../../src/services/openaiService');
 const { postToGas, getSheetData } = require('../../src/services/gasService');
-const { reply } = require('../../src/services/lineService');
+const { reply, pushMessages, pinMessage } = require('../../src/services/lineService');
 const { verifyLineSignature } = require('../../src/middleware/lineSignature');
 
 function makeReq(text, options = {}) {
@@ -78,6 +80,8 @@ beforeEach(() => {
   postToGas.mockResolvedValue(true);
   getSheetData.mockResolvedValue([]);
   reply.mockResolvedValue(undefined);
+  pushMessages.mockResolvedValue([]);
+  pinMessage.mockResolvedValue(undefined);
   verifyLineSignature.mockResolvedValue(true);
 });
 
@@ -202,5 +206,77 @@ describe('handleWebhook — ジュニア呼び出し', () => {
     await handleWebhook(req, res);
     await new Promise(r => setTimeout(r, 50));
     expect(reply).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleWebhook — DM（公式アカウントトーク）', () => {
+  test('DM ではジュニア呼び出しなしでも返答する', async () => {
+    generateJuniorResponse.mockResolvedValueOnce('なんでも聞いてな！');
+    const req = makeReq('明日のタイムテーブル教えて', { sourceType: 'user', userId: 'U_DM_001' });
+    req.body.events[0].source = { type: 'user', userId: 'U_DM_001' };
+    const res = makeRes();
+    await handleWebhook(req, res);
+    await new Promise(r => setTimeout(r, 50));
+    expect(generateJuniorResponse).toHaveBeenCalled();
+    expect(reply).toHaveBeenCalled();
+  });
+
+  test('グループでジュニア呼び出しなし → 返答しない', async () => {
+    const req = makeReq('明日のタイムテーブル教えて', { sourceType: 'group', userId: 'U_GRP_001' });
+    const res = makeRes();
+    await handleWebhook(req, res);
+    await new Promise(r => setTimeout(r, 50));
+    expect(reply).not.toHaveBeenCalled();
+    expect(generateJuniorResponse).not.toHaveBeenCalled();
+  });
+});
+
+describe('handleWebhook — join イベント', () => {
+  function makeJoinReq(groupId = 'C999') {
+    return {
+      ip: '127.0.0.1',
+      headers: { 'x-line-signature': 'valid' },
+      get: (h) => (h === 'x-line-signature' ? 'valid' : undefined),
+      rawBody: Buffer.from('test'),
+      body: {
+        events: [{
+          type: 'join',
+          replyToken: 'reply-token-join',
+          timestamp: Date.now(),
+          source: { type: 'group', groupId },
+        }],
+      },
+    };
+  }
+
+  test('join イベント → pushMessages で2通送信', async () => {
+    pushMessages.mockResolvedValueOnce([{ id: 'msg1' }, { id: 'msg2' }]);
+    const req = makeJoinReq('C999');
+    const res = makeRes();
+    await handleWebhook(req, res);
+    await new Promise(r => setTimeout(r, 50));
+    expect(pushMessages).toHaveBeenCalledWith('C999', expect.arrayContaining([
+      expect.objectContaining({ type: 'text' }),
+      expect.objectContaining({ type: 'text' }),
+    ]));
+    expect(pushMessages.mock.calls[0][1]).toHaveLength(2);
+  });
+
+  test('join イベント → 2通目のメッセージをピン止め', async () => {
+    pushMessages.mockResolvedValueOnce([{ id: 'msg1' }, { id: 'msg2' }]);
+    const req = makeJoinReq('C999');
+    const res = makeRes();
+    await handleWebhook(req, res);
+    await new Promise(r => setTimeout(r, 50));
+    expect(pinMessage).toHaveBeenCalledWith('C999', 'msg2');
+  });
+
+  test('join イベント → メッセージID取得失敗時はピン止めしない', async () => {
+    pushMessages.mockResolvedValueOnce([]);
+    const req = makeJoinReq('C999');
+    const res = makeRes();
+    await handleWebhook(req, res);
+    await new Promise(r => setTimeout(r, 50));
+    expect(pinMessage).not.toHaveBeenCalled();
   });
 });
