@@ -1,111 +1,255 @@
-# LINE Bot → Render デプロイ手順書
+# MOMENT 2026 セットアップ完全ガイド
 
-## 全体フロー
+## システム全体フロー
 
 ```
-LINEグループ20個
-    ↓ Webhook
-Render (Express サーバー)
-    ↓ OpenAI タスク抽出 + GAS POST
-GAS doPost Web App
+LINEグループ（複数）
+    ↓ Webhook（全メッセージ）
+Render サーバー（moment-task-system.onrender.com）
+    ↓ ① 全メッセージ → タスク抽出 + 確定情報抽出 → GASに無言で保存（ステルス）
+    ↓ ② 「ジュニア」とメンションされた時だけ → Q&A返信
+GAS Web App（doPost/doGet）
     ↓ SpreadsheetApp.openById()
-Google Sheets（管理マスターシート）
-    ├── 📱 LINEリアルタイム  ← 全メッセージログ
-    └── 📋 タスク自動抽出   ← AIが抽出したタスク
+Google Sheets（タスク・スケジュール管理スプシ）
+    ├── 📱 LINEリアルタイム    ← 全メッセージログ（500件ローテ）
+    ├── 📋 タスク（現役）      ← AI抽出タスク（自動upsert）
+    ├── ✅ 完了タスク          ← 完了アーカイブ
+    ├── 📚 確定知識ベース      ← 自動成長（LINEから学んだ確定情報）
+    ├── 📦 備品・資材          ← ジュニアが覚えた場所・数量
+    ├── 👥 スタッフ            ← スタッフ情報
+    ├── 🛍️ 出店リスト          ← 出店情報
+    └── 🔗 リンク集            ← 関連スプシリンク
+
+GAS 工程表（同じスプシ内の別シート）
+    ├── 📅 工程表_有給スタッフ            ← ガントチャート
+    ├── 📋 エントランス用_全チーム入り一覧 ← 当日チェックシート
+    └── 📊 当日運営マスター               ← 全工程・緊急対応一覧
 ```
 
 ---
 
-## STEP 1: GAS doPost をデプロイ
+## ⚠️ 実行順序（この順番で必ず）
 
-1. [Google Apps Script](https://script.google.com/) を開く
-2. 「新しいプロジェクト」→ プロジェクト名: `MOMENT2026 LINE Receiver`
-3. `gas/MOMENT2026_webhook_receiver.gs` の内容を貼り付けて保存
-4. `setupSecretToken` 関数を実行してシークレットトークンを設定
-   - `setupSecretToken()` 内の文字列を任意の英数字に変更してから実行
-   - 設定した文字列をメモしておく → **GAS_SECRET_TOKEN** として使う
-5. デプロイ → 新しいデプロイ
-   - 種類: **ウェブアプリ**
-   - 実行ユーザー: **自分（momose）**
-   - アクセス: **全員（匿名を含む）**
-6. 「デプロイ」→ 表示されたURLをコピー → **GAS_WEBHOOK_URL** として使う
+```
+STEP 1 → GAS webhook receiver をデプロイ（GAS_WEBHOOK_URL を取得）
+STEP 2 → GAS 工程表をセットアップ（スプシにシートを生成）
+STEP 3 → Render の環境変数を設定（STEP 1 の URL を使う）
+STEP 4 → Render プランをアップグレード（7/2 前に必須！）
+STEP 5 → LINE Developers で Webhook URL を設定
+STEP 6 → 動作確認
+```
 
 ---
 
-## STEP 2: Render に Node.js サービスを作成
+## STEP 1｜GAS webhook receiver をデプロイ
 
-1. [render.com](https://render.com) でアカウント作成（無料）
-2. 「New +」→「Web Service」
-3. Git リポジトリ接続 or「Public Git repository」から：
-   - `moment-task-system` フォルダを GitHub にプッシュしてから接続
-   - または「Deploy from existing code」
-4. 設定:
-   - **Name**: `moment-line-bot`
-   - **Runtime**: `Node`
-   - **Build Command**: `npm install`
-   - **Start Command**: `node src/index.js`
-   - **Instance Type**: Free
-5. 「Environment Variables」に以下を設定:
+**役割**: LINE Bot のデータを受け取ってスプレッドシートに書き込む中継サーバー
 
-| キー | 値 |
+### 1-1. GAS プロジェクトを開く
+
+👉 **https://script.google.com** にアクセス
+
+1. 「新しいプロジェクト」をクリック
+2. 左上のプロジェクト名（「無題のプロジェクト」）をクリック → `MOMENT2026_LINE_Receiver` に変更
+
+### 1-2. コードを貼り付け
+
+1. 左のファイル欄に `コード.gs` が1つある
+2. ファイルをクリック → エディタの中身を全選択（Ctrl+A）して削除
+3. `gas/MOMENT2026_webhook_receiver.gs` の内容をコピーして貼り付け
+4. Ctrl+S で保存
+
+### 1-3. セットアップを実行
+
+1. 上部の関数選択欄（▶ の左）をクリック → **`setupAll`** を選択
+2. ▶ 実行 をクリック
+3. 「権限が必要です」→「権限を確認」→ Googleアカウントでログイン → 「許可」
+4. 実行ログ（下部）に以下が表示される:
+   ```
+   GAS_SECRET_TOKEN: moment2026_xxxxxxxx  ← これをメモ！
+   ```
+
+### 1-4. ウェブアプリとしてデプロイ
+
+1. 右上「デプロイ」→「**新しいデプロイ**」
+2. 「種類の選択」→「**ウェブアプリ**」を選択
+3. 以下を設定:
+   - **説明**: `MOMENT2026 LINE Receiver`
+   - **次のユーザーとして実行**: 自分（自分のGoogleアカウント）
+   - **アクセスできるユーザー**: **全員**（匿名ユーザーを含む）
+4. 「デプロイ」をクリック
+5. 表示された URL（`https://script.google.com/macros/s/xxx/exec`）をコピー → **GAS_WEBHOOK_URL** としてメモ
+
+---
+
+## STEP 2｜GAS 工程表をセットアップ
+
+**役割**: エントランスチェックシート・当日運営マスター・ガントチャートを生成
+
+### 2-1. 対象スプレッドシートを開く
+
+👉 **https://docs.google.com/spreadsheets/d/1kPCg1fbYfRxrWs7VwALrLAOo4oqONGgLAn3grhYvUfQ/edit**
+
+### 2-2. Apps Script エディタを開く
+
+1. メニューバー「**拡張機能**」→「**Apps Script**」をクリック
+2. 新しいタブでエディタが開く
+
+### 2-3. コードを貼り付け
+
+1. 左のファイル欄の `コード.gs` をクリック → 中身を全選択して削除
+2. `gas/MOMENT2026_工程表.gs` の内容をコピーして貼り付け
+3. Ctrl+S で保存
+
+### 2-4. 全シートを一括生成
+
+1. 関数選択欄で **`setupAllSheets`** を選択
+2. ▶ 実行 をクリック → 権限許可が出たら「許可」
+3. 以下の3シートが自動生成される:
+   - `📅 工程表_有給スタッフ` — ガントチャート付き有給スタッフ工程表
+   - `📋 エントランス用_全チーム入り一覧` — 当日到着チェックシート（✅ 欄あり）
+   - `📊 当日運営マスター` — 緊急対応・スタッフ配置・タイムライン全網羅
+
+> ⚠️ 既存シートは一切変更されません。上記3枚のみ追加されます。
+
+---
+
+## STEP 3｜Render の環境変数を設定
+
+**役割**: LINE Bot サーバー（Render）に API キーを登録する
+
+### 3-1. Render ダッシュボードを開く
+
+👉 **https://dashboard.render.com** にログイン
+
+1. 左メニューの「**Web Services**」→ `moment-task-system`（または `moment-line-bot`）をクリック
+2. 左メニュー「**Environment**」をクリック
+
+### 3-2. 環境変数を1つずつ追加
+
+「**Add Environment Variable**」を押して以下を登録:
+
+| キー | 値 | どこで取得するか |
+|------|-----|-----------------|
+| `LINE_CHANNEL_ACCESS_TOKEN` | `U+英数字の長い文字列` | LINE Developers → チャンネル → Messaging API → チャンネルアクセストークン |
+| `LINE_CHANNEL_SECRET` | `英数字32文字` | LINE Developers → チャンネル → チャンネル基本設定 → チャンネルシークレット |
+| `OPENAI_API_KEY` | `sk-proj-xxxxx` | https://platform.openai.com/api-keys |
+| `GAS_WEBHOOK_URL` | `https://script.google.com/macros/s/xxx/exec` | STEP 1-4 でメモしたURL |
+| `GAS_SECRET_TOKEN` | `moment2026_xxxxxxxx` | STEP 1-3 でメモしたトークン |
+| `NODE_ENV` | `production` | そのまま入力 |
+
+3. 「**Save Changes**」をクリック → 自動で再デプロイが始まる（2〜3分待つ）
+
+### 3-3. デプロイ完了を確認
+
+- Render ダッシュボードで「**Live** 🟢」になれば OK
+- Webhook URL: `https://moment-task-system.onrender.com/webhook`
+
+---
+
+## STEP 4｜Render プランをアップグレード（7/2 前に必須！）
+
+> **⚠️ 無料プランだと15分間リクエストがないとスリープします。本番中（7/3〜7/5）にジュニアが沈黙します。**
+
+### 4-1. 支払い情報を登録
+
+👉 **https://dashboard.render.com/billing**
+
+1. 「**Add Payment Method**」→ クレジットカード情報を入力
+
+### 4-2. プランを変更
+
+1. 「**Web Services**」→ `moment-task-system`（または `moment-line-bot`）をクリック
+2. 左メニュー「**Scaling**」または「**Settings**」→「**Instance Type**」
+3. **Starter（$7/月）** を選択 → 「**Save**」
+
+> ✅ `render.yaml` のプランは既に `starter` に設定済みなので、リポジトリと連携している場合は自動反映されます。請求のみ要設定。
+
+---
+
+## STEP 5｜LINE Developers で Webhook URL を設定
+
+### 5-1. LINE Developers Console を開く
+
+👉 **https://developers.line.biz/console/**
+
+1. プロバイダー → **MOMENT 2026** のチャンネルをクリック
+2. 「**Messaging API**」タブをクリック
+
+### 5-2. Webhook URL を設定
+
+1. 「**Webhook URL**」の「編集」をクリック
+2. 以下を入力:
+   ```
+   https://moment-task-system.onrender.com/webhook
+   ```
+3. 「**更新**」→「**検証**」→ 「成功」が表示されれば OK
+4. 「**Webhookの利用**」が **ON** になっていることを確認
+
+---
+
+## STEP 6｜動作確認
+
+### テスト1: タスク抽出（ステルス）
+1. LINE Botが入っているグループで送信:
+   ```
+   hajimeさん、明日までにテント設営お願い
+   ```
+2. Bot は**返答しない**（ステルス動作）
+3. スプシの「📋 タスク（現役）」に行が追加されていれば ✅
+
+### テスト2: ジュニア Q&A
+1. 同じグループで送信:
+   ```
+   ジュニア、ゲートオープン何時？
+   ```
+2. Bot が「7月3日の朝9時やで！🌅」のように返答すれば ✅
+
+### テスト3: 自動成長
+1. グループで送信:
+   ```
+   ジュニア、テント置き場はBエリアに決まったよ
+   ```
+2. Bot が「覚えたで！テント → Bエリアやな🌱」と返答すれば ✅
+3. スプシの「📦 備品・資材」に追記されていれば ✅
+
+### テスト4: 確定情報の自動学習
+1. グループで送信（ジュニアを呼ばずに）:
+   ```
+   エントランスのゲートは9:00に確定しました
+   ```
+2. Bot は**返答しない**（ステルス）
+3. スプシの「📚 確定知識ベース」に追記されていれば ✅
+4. その後「ジュニア、ゲートオープンは？」と聞くと学んだ情報で答える
+
+---
+
+## よくあるトラブル
+
+### Bot が返答しない
+- Render で「**Live** 🟢」になっているか確認: https://dashboard.render.com
+- LINE Developers で Webhook URL が正しく設定されているか確認
+- 無料プランの場合: Render がスリープ中（最初のメッセージから15秒後に返答）
+
+### GAS デプロイが失敗する
+- 「アクセスできるユーザー: 全員」になっているか確認
+- デプロイ後に URL が変わる → Render の `GAS_WEBHOOK_URL` を更新する
+
+### ジュニアが返答しない（タスク抽出はされる）
+- メッセージに「**ジュニア**」または「**junior**」が含まれているか確認（大小文字不問）
+- Render の `OPENAI_API_KEY` が正しいか確認
+
+---
+
+## 各種リンク早見表
+
+| 用途 | URL |
 |------|-----|
-| `LINE_CHANNEL_ACCESS_TOKEN` | LINE Developers から取得 |
-| `LINE_CHANNEL_SECRET` | LINE Developers から取得 |
-| `OPENAI_API_KEY` | OpenAI API キー |
-| `GAS_WEBHOOK_URL` | STEP 1 で取得したGAS URL |
-| `GAS_SECRET_TOKEN` | STEP 1 で設定したトークン |
-
-6. 「Deploy」→ デプロイ完了後に表示される URL をコピー
-   - 例: `https://moment-line-bot.onrender.com`
-   - Webhook URL: `https://moment-line-bot.onrender.com/webhook`
-
----
-
-## STEP 3: LINE Developers で Webhook URL を設定
-
-1. [LINE Developers Console](https://developers.line.biz/) を開く
-2. プロバイダー → チャンネル（MOMENT Bot）を選択
-3. 「Messaging API」タブ → 「Webhook URL」
-4. `https://moment-line-bot.onrender.com/webhook` を入力
-5. 「検証」→ 成功を確認
-6. 「Webhookの利用」を ON にする
-
----
-
-## STEP 4: LINE Bot を20グループに追加
-
-**HI-C またはマイクが対応（1グループ約10秒）:**
-
-1. LINE Bot の QR コードを LINE Developers Console から表示
-2. 各グループを開く → 「メンバーを追加」→ QR コードでスキャン → 追加
-
-**追加必要なグループ一覧:**
-- Moment26デコレーションG
-- Moment26音響G
-- Moment26電源G
-- Moment26設営G
-- 舞台監督グループ
-- BARグループ
-- エントランスG
-- 警備・駐車場G
-- ボランティアG
-- …（全20グループ）
-
----
-
-## STEP 5: 動作確認
-
-1. いずれかのグループでテストメッセージを送る
-   - 例: 「妹尾さん、カムロックケーブル80mを6/25までに手配してください」
-2. Bot が「✅ タスク1件 登録しました！」と返信 → 成功
-3. Google Sheets の「📱 LINEリアルタイム」「📋 タスク自動抽出」シートを確認
-
----
-
-## 注意事項
-
-- **Render Free プランのスリープ**: 15分間リクエストがないと自動スリープ
-  - 最初のリクエストに15〜20秒かかる（LINE がタイムアウトして再送することもある）
-  - 本番期間中（7/3〜7/5）は有料プランへのアップグレード推奨（$7/月）
-- **GAS 実行制限**: 1日 6時間/トリガー 20,000回 → 通常使用では問題なし
-- **Bot はグループ内の全メッセージを記録する**（スタッフに周知推奨）
+| Google Apps Script | https://script.google.com |
+| タスク・スケジュール管理スプシ | https://docs.google.com/spreadsheets/d/1kPCg1fbYfRxrWs7VwALrLAOo4oqONGgLAn3grhYvUfQ/edit |
+| Render ダッシュボード | https://dashboard.render.com |
+| Render 請求設定 | https://dashboard.render.com/billing |
+| LINE Developers Console | https://developers.line.biz/console/ |
+| OpenAI API キー発行 | https://platform.openai.com/api-keys |
+| Bot の Webhook URL | https://moment-task-system.onrender.com/webhook |
+| Bot のヘルスチェック | https://moment-task-system.onrender.com/health |
