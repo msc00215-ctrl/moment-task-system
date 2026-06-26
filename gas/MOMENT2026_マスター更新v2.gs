@@ -550,15 +550,15 @@ function createArtistCareSheet_v2(ss) {
   sh.setRowHeight(1, 48);
 
   sh.getRange('A2:J2').merge()
-    .setValue('ケアスタッフ: MARIA（ピンク）/ TUI（ブルー）/ LOE（グリーン）/ BUNDO（オレンジ）｜ ラインナップ詳細は確認後に記入');
+    .setValue('ケアスタッフ: MARIA（ピンク）/ TUI（ブルー）/ LOE（グリーン）/ BUNDO（オレンジ）｜ 総勢29組 ｜ 出演時間・宿泊情報は確認次第更新');
   sh.getRange('A2:J2').setBackground(C.H2_BG).setFontColor(C.GOLD).setFontSize(10)
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sh.setRowHeight(2, 28);
 
-  // 注意書き
+  // 確定済みアナウンス
   sh.getRange('A3:J3').merge()
-    .setValue('⚠️ アーティストラインナップは公式確定後に記入 — 確定前の情報は記載しない（絶対間違えないよう正確な情報を）');
-  sh.getRange('A3:J3').setBackground(C.ALERT_BG).setFontColor(C.ALERT_FG).setFontSize(10)
+    .setValue('✅ ラインナップ確定済み（MARIA 6/18確認）— 総勢29組 ｜ 出演時間・宿泊タイプ・ホテル名・便情報は確定次第更新');
+  sh.getRange('A3:J3').setBackground('#E8F5E9').setFontColor('#1B5E20').setFontSize(10)
     .setHorizontalAlignment('center').setVerticalAlignment('middle').setFontWeight('bold');
   sh.setRowHeight(3, 28);
 
@@ -577,35 +577,62 @@ function createArtistCareSheet_v2(ss) {
     'TBD':   [C.ALERT_BG, C.ALERT_FG],
   };
 
-  // 確定行数分の空行（ラインナップ確定後に記入用）
-  // 30枠を用意
-  for (let i = 0; i < 30; i++) {
-    const r = 5 + i;
-    const careOrder = ['MARIA', 'TUI', 'LOE', 'BUNDO'];
-    const care = 'TBD';
-    sh.getRange(r, 1).setValue(i + 1);
-    sh.getRange(r, 2).setValue('（ラインナップ確定後に記入）');
-    sh.getRange(r, 3).setValue('MAIN');
-    sh.getRange(r, 4).setValue('');
-    sh.getRange(r, 5).setValue('');
-    sh.getRange(r, 6).setValue('');
-    sh.getRange(r, 7).setValue(careOrder[i % 4]);
-    sh.getRange(r, 8).setValue('');
-    sh.getRange(r, 9).setValue('');
-    sh.getRange(r, 10).setValue('');
+  // 確定済みアーティストリスト（MARIA 6/18 アナウンス確認）
+  // 列: #, アーティスト名, ステージ, 出演時間, 宿泊タイプ, ホテル名, ケア担当, 到着便, 帰路便, 備考
+  const artists = [
+    // ① 国内
+    [1,  'Hiroo Tachibana & KAZUMA ONISHI with MuSuHi', 'MAIN', 'TBD', '',       '', 'MARIA', '', '', 'Group ①'],
+    [2,  '鏡民',                    'MAIN', 'TBD', '',       '', 'TUI',   '', '', 'Group ①'],
+    [3,  'DJ Senoh',                'MAIN', 'TBD', '',       '', 'LOE',   '', '', 'Group ①'],
+    [4,  'You Forgot',              'MAIN', 'TBD', '',       '', 'BUNDO', '', '', 'Group ①'],
+    // ② International DJ
+    [5,  'Gordon',                  'MAIN', 'TBD', 'ホテル', '', 'MARIA', '', '', 'Group ② International'],
+    [6,  'Morgan',                  'MAIN', 'TBD', 'ホテル', '', 'TUI',   '', '', 'Group ② International'],
+    // ③ 国内
+    [7,  'Zundoko Disco',           'MAIN', 'TBD', '',       '', 'LOE',   '', '', 'Group ③'],
+    [8,  'Natsuki',                 'MAIN', 'TBD', '',       '', 'BUNDO', '', '', 'Group ③'],
+    [9,  'Yamarchy',                'MAIN', 'DAY2 1:30〜7:30', '', '', 'MARIA', '', '', 'Group ③ ✅確定'],
+    [10, 'CHIDA',                   'MAIN', 'TBD', '',       '', 'TUI',   '', '', 'Group ③'],
+    // ④ International LIVE
+    [11, 'Azu Tiwaline',            'MAIN', 'TBD', 'ホテル', '', 'LOE',   '', '', 'Group ④ International LIVE'],
+    [12, 'JakoJako',                'MAIN', 'TBD', 'ホテル', '', 'BUNDO', '', '', 'Group ④ International LIVE'],
+    // ⑤ 国内
+    [13, 'Endurance',               'MAIN', 'TBD', '',       '', 'MARIA', '', '', 'Group ⑤'],
+    [14, 'Taihei',                  'MAIN', 'TBD', '',       '', 'TUI',   '', '', 'Group ⑤'],
+    [15, 'YMT',                     'MAIN', 'TBD', '',       '', 'LOE',   '', '', 'Group ⑤'],
+    [16, 'Hideo Nakasako',          'MAIN', 'TBD', '',       '', 'BUNDO', '', '', 'Group ⑤ LIVE'],
+    // ❻ 国内LIVE
+    [17, 'Kuniyuki',                'MAIN', 'DAY2 23:30〜1:30', '', '', 'MARIA', '', '', 'Group ❻ LIVE ✅確定'],
+    [18, 'Olive Oil',               'MAIN', 'TBD', '',       '', 'TUI',   '', '', 'Group ❻ LIVE'],
+    [19, 'Hybrid Man',              'MAIN', 'TBD', 'ホテル', '', 'LOE',   '', '', 'Group ❻ International LIVE'],
+    // ❼ 国内
+    [20, 'MOMO',                    'MAIN', 'TBD', '',       '', 'BUNDO', '', '', 'Group ❼'],
+    [21, 'KAGE',                    'MAIN', 'TBD', '',       '', 'MARIA', '', '', 'Group ❼'],
+    [22, 'YAMA',                    'MAIN', 'TBD', '',       '', 'TUI',   '', '', 'Group ❼'],
+    [23, 'CMT',                     'MAIN', 'TBD', '',       '', 'LOE',   '', '', 'Group ❼'],
+    // ❽ 国内
+    [24, 'DJ MARIA.',               'MAIN', 'TBD', '',       '', 'BUNDO', '', '', 'Group ❽'],
+    [25, 'DJ HI-C',                 'MAIN', 'TBD', '',       '', 'MARIA', '', '', 'Group ❽'],
+    [26, 'Akira Arasawa',           'MAIN', 'TBD', '',       '', 'TUI',   '', '', 'Group ❽'],
+    [27, 'yu1',                     'MAIN', 'TBD', '',       '', 'LOE',   '', '', 'Group ❽'],
+  ];
 
-    const assignedCare = careOrder[i % 4];
-    const [bg, fg] = careColorMap[assignedCare] || [i % 2 === 0 ? C.ROW_A_BG : C.ROW_B_BG, C.DARK];
+  artists.forEach((row, i) => {
+    const r = 5 + i;
+    sh.getRange(r, 1, 1, row.length).setValues([row]);
+    const care = row[6];
+    const [bg, fg] = careColorMap[care] || [i % 2 === 0 ? C.ROW_A_BG : C.ROW_B_BG, C.DARK];
     sh.getRange(r, 1, 1, 10).setBackground(bg).setFontColor(fg).setVerticalAlignment('middle')
       .setBorder(true, true, true, true, true, true, '#CCCCCC', SpreadsheetApp.BorderStyle.SOLID);
-    sh.getRange(r, 2).setFontStyle('italic');
+    sh.getRange(r, 2).setFontWeight('bold');
     sh.getRange(r, 7).setFontWeight('bold');
-    sh.setRowHeight(r, 30);
-  }
+    sh.setRowHeight(r, 32);
+  });
 
   // ケア担当サマリーブロック
-  const sumRow = 5 + 30 + 1;
-  sh.getRange(sumRow, 1, 1, 10).merge().setValue('【ケア担当割当基準】 MARIA: 1番目/5番目/9番目… ｜ TUI: 2番目/6番目/10番目… ｜ LOE: 3番目/7番目… ｜ BUNDO: 4番目/8番目…');
+  const sumRow = 5 + artists.length + 1;
+  sh.getRange(sumRow, 1, 1, 10).merge()
+    .setValue('【確定ラインナップ 27組（総勢29組）｜ チルアウトステージは当日サプライズ公開】  MARIA: 1/5/9/13/17/21/25 ｜ TUI: 2/6/10/14/18/22/26 ｜ LOE: 3/7/11/15/19/23/27 ｜ BUNDO: 4/8/12/16/20/24');
   sh.getRange(sumRow, 1, 1, 10).setBackground(C.H2_BG).setFontColor(C.GOLD)
     .setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle').setFontWeight('bold');
   sh.setRowHeight(sumRow, 36);
@@ -628,8 +655,8 @@ function createTimeTableSheet_v2(ss) {
   sh.setRowHeight(1, 48);
 
   sh.getRange('A2:G2').merge()
-    .setValue('⚠️ 暫定版 — ラインナップ公式発表後に更新 ｜ 確定済み情報のみ掲載');
-  sh.getRange('A2:G2').setBackground(C.ALERT_BG).setFontColor(C.ALERT_FG).setFontSize(10)
+    .setValue('✅ ラインナップ確定済み（総勢29組）— 一部出演時間確定 ｜ 未確定枠は「確定後に記入」と表示');
+  sh.getRange('A2:G2').setBackground('#E8F5E9').setFontColor('#1B5E20').setFontSize(10)
     .setHorizontalAlignment('center').setVerticalAlignment('middle').setFontWeight('bold');
   sh.setRowHeight(2, 28);
 
@@ -640,7 +667,7 @@ function createTimeTableSheet_v2(ss) {
 
   const timeInfo = [
     ['', 'DAY1 7/3（金）', 'ゲート:  9:00〜22:00',  '音楽:  14:00〜翌4:00', '→約14時間', '', ''],
-    ['', 'DAY2 7/4（土）', 'ゲート:  9:00〜20:00',  '音楽:  11:00〜翌7:00', '→約20時間', '', ''],
+    ['', 'DAY2 7/4（土）', 'ゲート:  9:00〜20:00',  '音楽:  11:00〜翌7:30', '→約20.5時間', '', 'Yamarchy 1:30〜7:30 ✅確定'],
     ['', 'DAY3 7/5（日）', 'ゲート:  9:00〜20:00',  '音楽:  10:00〜18:00',  '→8時間', '', 'After Party 18:00〜24:00'],
   ];
 
@@ -660,7 +687,7 @@ function createTimeTableSheet_v2(ss) {
   });
 
   // タイムテーブル本体
-  sh.getRange('A7:G7').merge().setValue('【出演タイムテーブル — ラインナップ確定後に記入】');
+  sh.getRange('A7:G7').merge().setValue('【出演タイムテーブル — ✅確定枠あり ｜ 未確定枠は随時更新】');
   styleH2(sh.getRange('A7:G7'));
   sh.setRowHeight(7, 32);
 
@@ -675,39 +702,58 @@ function createTimeTableSheet_v2(ss) {
     'DAY2 7/4(土)': [C.CAT_MOMENT_BG, C.CAT_MOMENT_FG],
     'DAY3 7/5(日)': [C.CAT_DECO_BG,   C.CAT_DECO_FG],
     'LIVE PAINT':   [C.CAT_VIDEO_BG,   C.CAT_VIDEO_FG],
+    'SPECIAL':      [C.CAT_DECO_BG,    C.CAT_DECO_FG],
   };
 
-  // DAY1 (14:00〜翌4:00 ≒ 14時間 / 各2時間枠で約7組)
-  const timetableTemplate = [];
-  let no = 1;
-  const day1Slots = ['14:00','16:00','18:00','20:00','22:00','00:00','02:00'];
-  day1Slots.forEach((t, i) => {
-    const end = day1Slots[i+1] || '04:00';
-    timetableTemplate.push([no++, 'DAY1 7/3(金)', '（確定後に記入）', 'MAIN', t, end, '']);
-  });
-  const day2Slots = ['11:00','13:00','15:00','17:00','19:00','21:00','23:00','01:00','03:00','05:00'];
-  day2Slots.forEach((t, i) => {
-    const end = day2Slots[i+1] || '07:00';
-    timetableTemplate.push([no++, 'DAY2 7/4(土)', '（確定後に記入）', 'MAIN', t, end, '']);
-  });
-  const day3Slots = ['10:00','12:00','14:00','16:00'];
-  day3Slots.forEach((t, i) => {
-    const end = day3Slots[i+1] || '18:00';
-    timetableTemplate.push([no++, 'DAY3 7/5(日)', '（確定後に記入）', 'MAIN', t, end, '']);
-  });
-  // After Party
-  timetableTemplate.push([no++, 'DAY3 7/5(日)', 'After Party（TBD）', 'MAIN', '18:00', '24:00', 'After Party']);
-  // Live Paint
-  timetableTemplate.push([no++, 'LIVE PAINT', '（確定後に記入）', 'LIVE PAINT', 'DAY1〜3', '', 'ライブペイント']);
+  // 出演タイムテーブル（確定済みスロットは✅確定と表記）
+  // DAY1: 音楽 14:00〜翌4:00 ｜ DAY2: 11:00〜翌7:30 ｜ DAY3: 10:00〜18:00
+  const timetableData = [
+    // DAY1 プレオープン特別枠（確定済み）
+    [0,  'DAY1 7/3(金)', 'ドラムサークル',   'SPECIAL', '10:00', '11:00', 'Elements Link / RAGAM田辺響 / cojicose TAMARU ✅確定'],
+    // DAY1 メインステージ（14:00〜翌4:00）
+    [1,  'DAY1 7/3(金)', '（確定後に記入）', 'MAIN', '14:00', '16:00', ''],
+    [2,  'DAY1 7/3(金)', '（確定後に記入）', 'MAIN', '16:00', '18:00', ''],
+    [3,  'DAY1 7/3(金)', '（確定後に記入）', 'MAIN', '18:00', '20:00', ''],
+    [4,  'DAY1 7/3(金)', '（確定後に記入）', 'MAIN', '20:00', '22:00', ''],
+    [5,  'DAY1 7/3(金)', '（確定後に記入）', 'MAIN', '22:00', '00:00', ''],
+    [6,  'DAY1 7/3(金)', '（確定後に記入）', 'MAIN', '00:00', '02:00', ''],
+    [7,  'DAY1 7/3(金)', '（確定後に記入）', 'MAIN', '02:00', '04:00', ''],
+    // DAY2 メインステージ（11:00〜翌7:30）
+    [8,  'DAY2 7/4(土)', '（確定後に記入）', 'MAIN', '11:00', '13:00', ''],
+    [9,  'DAY2 7/4(土)', '（確定後に記入）', 'MAIN', '13:00', '15:00', ''],
+    [10, 'DAY2 7/4(土)', '（確定後に記入）', 'MAIN', '15:00', '17:00', ''],
+    [11, 'DAY2 7/4(土)', '（確定後に記入）', 'MAIN', '17:00', '19:00', ''],
+    [12, 'DAY2 7/4(土)', '（確定後に記入）', 'MAIN', '19:00', '21:00', ''],
+    [13, 'DAY2 7/4(土)', '（確定後に記入）', 'MAIN', '21:00', '23:30', ''],
+    // 確定済み深夜枠
+    [14, 'DAY2 7/4(土)', 'Kuniyuki (LIVE)',  'MAIN', '23:30', '01:30', '✅確定'],
+    [15, 'DAY2 7/4(土)', 'Yamarchy',         'MAIN', '01:30', '07:30', '✅確定'],
+    // DAY3 朝ヨガ（確定済み）
+    [16, 'DAY3 7/5(日)', 'ヨガ',             'SPECIAL', '08:30', '09:30', 'Mitsuki & coji cose TAMARU ✅確定'],
+    // DAY3 メインステージ（10:00〜18:00）
+    [17, 'DAY3 7/5(日)', '（確定後に記入）', 'MAIN', '10:00', '12:00', ''],
+    [18, 'DAY3 7/5(日)', '（確定後に記入）', 'MAIN', '12:00', '14:00', ''],
+    [19, 'DAY3 7/5(日)', '（確定後に記入）', 'MAIN', '14:00', '16:00', ''],
+    [20, 'DAY3 7/5(日)', '（確定後に記入）', 'MAIN', '16:00', '18:00', ''],
+    // After Party
+    [21, 'DAY3 7/5(日)', 'After Party（TBD）', 'MAIN', '18:00', '24:00', 'After Party'],
+    // Live Paint
+    [22, 'LIVE PAINT',   '（確定後に記入）', 'LIVE PAINT', 'DAY1〜3', '', 'ライブペイント'],
+  ];
 
-  timetableTemplate.forEach((row, i) => {
+  timetableData.forEach((row, i) => {
     const r = 9 + i;
     sh.getRange(r, 1, 1, row.length).setValues([row]);
-    const day = row[1];
-    const [bg, fg] = dayColorMap[day] || [i % 2 === 0 ? C.ROW_A_BG : C.ROW_B_BG, C.DARK];
+    const day      = row[1];
+    const stage    = row[3];
+    const isConfirmed = row[6].includes('✅確定');
+    const isSpecial   = stage === 'SPECIAL';
+    const colorKey    = isSpecial ? 'SPECIAL' : day;
+    const [bg, fg] = dayColorMap[colorKey] || [i % 2 === 0 ? C.ROW_A_BG : C.ROW_B_BG, C.DARK];
     sh.getRange(r, 1, 1, 7).setBackground(bg).setFontColor(fg).setVerticalAlignment('middle')
       .setBorder(true, true, true, true, true, true, '#CCCCCC', SpreadsheetApp.BorderStyle.SOLID);
-    sh.getRange(r, 3).setFontStyle('italic');
+    if (isConfirmed || isSpecial) sh.getRange(r, 3).setFontWeight('bold').setFontStyle('normal');
+    else                          sh.getRange(r, 3).setFontStyle('italic');
     sh.setRowHeight(r, 30);
   });
 }
