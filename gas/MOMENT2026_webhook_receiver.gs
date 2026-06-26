@@ -28,7 +28,10 @@ const SHEET_EQUIPMENT  = '📦 備品・資材';
 const SHEET_STAFF      = '👥 スタッフ';
 const SHEET_VENDORS    = '🛍️ 出店リスト';
 const SHEET_LINKS      = '🔗 リンク集';
+const SHEET_KNOWLEDGE  = '📚 確定知識ベース';
 const LINE_LOG_MAX     = 500;
+
+const KNOWLEDGE_HEADERS = ['登録日時', 'カテゴリ', '内容', 'ソース（グループ名）', '元メッセージ'];
 
 const TASK_HEADERS = [
   '最終更新', 'グループ名', '担当者', '部署', 'タスク内容',
@@ -65,6 +68,8 @@ function doPost(e) {
       upsertTasks(ss, data);
     } else if (data.type === 'equipment') {
       upsertEquipment(ss, data);
+    } else if (data.type === 'knowledge') {
+      upsertKnowledge(ss, data);
     }
 
     return jsonResponse({ ok: true });
@@ -100,6 +105,9 @@ function doGet(e) {
     }
     if (type === 'artist') {
       return jsonResponse({ ok: true, data: getArtistData() });
+    }
+    if (type === 'knowledge') {
+      return jsonResponse({ ok: true, data: getKnowledgeData(ss) });
     }
 
     return jsonResponse({ ok: false, error: 'unknown type' });
@@ -215,6 +223,37 @@ function getVendorData(ss) {
       menu:     r[4] || '',
       contact:  r[5] || '',
       notes:    r[6] || '',
+    }));
+}
+
+// ─────────────────────────────────────────────
+// 確定知識: 追記（LINEから自動学習）
+// ─────────────────────────────────────────────
+
+function upsertKnowledge(ss, data) {
+  const sheet = getOrCreateSheet(ss, SHEET_KNOWLEDGE, KNOWLEDGE_HEADERS);
+  const now = new Date().toISOString();
+  const row = [
+    now,
+    data.category    || 'その他',
+    data.content     || '',
+    data.groupName   || '',
+    (data.originalText || '').slice(0, 200),
+  ];
+  sheet.getRange(sheet.getLastRow() + 1, 1, 1, row.length).setValues([row]);
+}
+
+function getKnowledgeData(ss) {
+  const sheet = ss.getSheetByName(SHEET_KNOWLEDGE);
+  if (!sheet || sheet.getLastRow() < 2) return [];
+  const rows = sheet.getRange(2, 1, sheet.getLastRow() - 1, KNOWLEDGE_HEADERS.length).getValues();
+  return rows
+    .filter(r => r[2])
+    .map(r => ({
+      timestamp: r[0] ? String(r[0]) : '',
+      category:  r[1] || 'その他',
+      content:   r[2] || '',
+      source:    r[3] || '',
     }));
 }
 

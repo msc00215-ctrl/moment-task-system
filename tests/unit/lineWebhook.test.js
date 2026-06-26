@@ -11,6 +11,7 @@ jest.mock('../../src/services/openaiService', () => ({
   extractTasks:          jest.fn().mockResolvedValue([]),
   generateJuniorResponse: jest.fn().mockResolvedValue(null),
   extractEquipmentInfo:  jest.fn().mockResolvedValue({ found: false }),
+  extractKnowledge:      jest.fn().mockResolvedValue({ found: false }),
 }));
 
 jest.mock('../../src/services/gasService', () => ({
@@ -35,7 +36,7 @@ jest.mock('../../src/config', () => ({
 }));
 
 const { handleWebhook } = require('../../src/handlers/lineWebhook');
-const { extractTasks, generateJuniorResponse, extractEquipmentInfo } = require('../../src/services/openaiService');
+const { extractTasks, generateJuniorResponse, extractEquipmentInfo, extractKnowledge } = require('../../src/services/openaiService');
 const { postToGas, getSheetData } = require('../../src/services/gasService');
 const { reply } = require('../../src/services/lineService');
 const { verifyLineSignature } = require('../../src/middleware/lineSignature');
@@ -73,6 +74,7 @@ beforeEach(() => {
   extractTasks.mockResolvedValue([]);
   generateJuniorResponse.mockResolvedValue(null);
   extractEquipmentInfo.mockResolvedValue({ found: false });
+  extractKnowledge.mockResolvedValue({ found: false });
   postToGas.mockResolvedValue(true);
   getSheetData.mockResolvedValue([]);
   reply.mockResolvedValue(undefined);

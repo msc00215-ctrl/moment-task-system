@@ -283,6 +283,7 @@ function onOpen() {
       .createMenu('🎵 MOMENT 2026')
       .addItem('📅 工程表_有給スタッフ 作成/更新', 'setupKoteiHyoSheet')
       .addItem('📋 エントランス用_全チーム入り一覧 作成/更新', 'setupEntranceSheet')
+      .addItem('📊 当日運営マスター 作成/更新', 'setupMasterSheet')
       .addSeparator()
       .addItem('⚡ 全シート一括作成/更新', 'setupAllSheets')
       .addToUi();
@@ -293,6 +294,7 @@ function onOpen() {
 function setupAllSheets() {
   setupKoteiHyoSheet();
   setupEntranceSheet();
+  setupMasterSheet();
   try {
     SpreadsheetApp.getUi().alert('✅ 全シートを作成/更新しました！');
   } catch (e) {}
@@ -457,10 +459,285 @@ function setupEntranceSheet() {
   sh.setColumnWidth(7,  80);  // ステータス
   sh.setColumnWidth(8,  70);  // チェック
 
-  // ── チェック欄を保護対象外（編集可能）にしてそれ以外をロック ──
-  // ※ GASの保護はオーナー自身にしか適用されないため、実用上はコメントのみ記録
   Logger.log('✅ 「' + ENTRANCE_SHEET_NAME + '」を作成しました: ' + ss.getUrl());
   try {
     SpreadsheetApp.getUi().alert('✅ 「' + ENTRANCE_SHEET_NAME + '」を作成しました！\n\n' + ss.getUrl());
+  } catch (e) {}
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 📊 当日運営マスターシート — 全工程一元管理
+// ═══════════════════════════════════════════════════════════════
+
+const MASTER_SHEET_NAME = '📊 当日運営マスター';
+
+function setupMasterSheet() {
+  const ss = SpreadsheetApp.openById(KOTEI_SS_ID);
+
+  const existing = ss.getSheetByName(MASTER_SHEET_NAME);
+  if (existing) ss.deleteSheet(existing);
+  const sh = ss.insertSheet(MASTER_SHEET_NAME);
+  sh.setTabColor('#d32f2f');
+
+  const NC = 10; // 総列数
+  let row = 1;
+
+  function title(text, bg, fc, size) {
+    bg   = bg   || KT.NAVY;
+    fc   = fc   || KT.WHITE;
+    size = size || 14;
+    sh.setRowHeight(row, 48);
+    sh.getRange(row, 1, 1, NC).merge()
+      .setValue(text).setBackground(bg).setFontColor(fc)
+      .setFontSize(size).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    row++;
+  }
+
+  function sectionHead(text, bg) {
+    sh.setRowHeight(row - 1, 8);
+    sh.setRowHeight(row, 36);
+    sh.getRange(row, 1, 1, NC).merge()
+      .setValue(text).setBackground(bg || '#263238').setFontColor(KT.WHITE)
+      .setFontSize(12).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    row++;
+  }
+
+  function dataRow(cells, bg) {
+    sh.setRowHeight(row, 28);
+    cells.forEach((val, i) => {
+      if (i < NC) sh.getRange(row, i + 1).setValue(val).setVerticalAlignment('middle').setWrap(true);
+    });
+    if (bg) sh.getRange(row, 1, 1, NC).setBackground(bg);
+    row++;
+  }
+
+  function mergedRow(col, span, val, bg, fc) {
+    sh.getRange(row, col, 1, span).merge()
+      .setValue(val).setBackground(bg || '#f5f5f5').setFontColor(fc || '#000000')
+      .setVerticalAlignment('middle').setWrap(true);
+  }
+
+  function blankRow(h) { sh.setRowHeight(row, h || 8); row++; }
+
+  // ── タイトル ──
+  title('📊 MOMENT 2026 当日運営マスターシート', KT.NAVY, KT.WHITE, 16);
+  sh.setRowHeight(row, 24);
+  sh.getRange(row, 1, 1, NC).merge()
+    .setValue('更新: ' + Utilities.formatDate(new Date(), 'Asia/Tokyo', 'yyyy/MM/dd HH:mm') +
+      '　⚠️ このシートは内部スタッフ専用です。外部に共有しないこと。')
+    .setBackground('#fbe9e7').setFontSize(9)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  row++;
+  sh.setFrozenRows(2);
+
+  // ═══════════════════════════════════════════
+  // 【1】 イベント概要
+  // ═══════════════════════════════════════════
+  blankRow();
+  sectionHead('【1】 イベント概要', '#1a237e');
+
+  const overview = [
+    ['イベント名', 'MOMENT 2026', '開催日', '2026年7月3日(金)〜7月5日(日)', '撤収', '7/6(月)7:00〜'],
+    ['テーマ',     '"深化"',       '会場',   '洞川キャンプ場（奈良県天川村）', '収容', '850名'],
+    ['チケット',   '前売り810枚 完売 / 当日券なし', 'ゲートオープン', '7/3(金) 9:00', 'TT開始', '7/3(金) 15:00'],
+    ['After終了',  '7/5(日) 23:30', '駐車場', 'A:96台 B:52台 計150台', '出店者P', 'あたらしや体育館'],
+  ];
+  overview.forEach((r, i) => {
+    sh.setRowHeight(row, 26);
+    const bg = i % 2 === 0 ? '#e8eaf6' : '#f5f5f5';
+    for (let c = 0; c < 6; c++) {
+      const isLabel = c % 2 === 0;
+      sh.getRange(row, c + 1)
+        .setValue(r[c])
+        .setBackground(isLabel ? '#283593' : bg)
+        .setFontColor(isLabel ? KT.WHITE : '#000000')
+        .setFontWeight(isLabel ? 'bold' : 'normal')
+        .setVerticalAlignment('middle').setWrap(true);
+    }
+    // 残り4列を背景合わせ
+    if (NC > 6) sh.getRange(row, 7, 1, NC - 6).setBackground(bg);
+    row++;
+  });
+
+  // ═══════════════════════════════════════════
+  // 【2】 日程タイムライン
+  // ═══════════════════════════════════════════
+  blankRow();
+  sectionHead('【2】 日程タイムライン（設営〜撤収）', '#4a148c');
+
+  const timeline = [
+    ['6/29(月)', '設営1日目', 'テント設営開始', '10:00 倉庫積み込み → 15:00 会場入り・テント設営', '#f3e5f5'],
+    ['6/30(火)', '設営2日目', '備品搬入',        '8:00 備品荷下ろし・資材運搬 / Shinovi Creation入り', '#f3e5f5'],
+    ['7/1(水)',  '設営3日目', 'エントランス設営', '8:00 エントランス設営・投光器設置 / 業者各社搬入', '#f3e5f5'],
+    ['7/2(木)',  '設営4日目', '最終設営・仕込み',  '8:00 備品清掃 / 14:00 最終確認 / 16:00 ゴミ拾い', '#f3e5f5'],
+    ['7/3(金)',  'DAY1 ★',   'ゲートオープン',    '9:00 ゲートオープン / 15:00 TT開始 / 22:00 車入場〆', '#ede7f6'],
+    ['7/4(土)',  'DAY2',      '2日目',            '9:00 警備 / 20:00 車入場〆',                         '#ede7f6'],
+    ['7/5(日)',  'DAY3',      'After〜撤収準備',   '10:00 警備 / 23:30 After終了',                      '#ede7f6'],
+    ['7/6(月)',  '撤収1日目', '全チーム撤収開始',  '7:00〜 全チーム撤収 / Joshua SW OUT PM13:00',       '#e8f5e9'],
+    ['7/7(火)',  '撤収2日目', '機材返却・完了',     '11:00 西尾レントール機材返却 / Shinovi Creation OUT', '#e8f5e9'],
+  ];
+
+  sh.setRowHeight(row, 26);
+  ['日付', 'フェーズ', 'ポイント', '詳細', '', '', '', '', '', ''].forEach((h, c) => {
+    sh.getRange(row, c + 1).setValue(h)
+      .setBackground(KT.NAVY).setFontColor(KT.WHITE).setFontWeight('bold')
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  });
+  row++;
+
+  timeline.forEach(([date, phase, point, detail, bg]) => {
+    sh.setRowHeight(row, 30);
+    sh.getRange(row, 1).setValue(date).setBackground(bg).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sh.getRange(row, 2).setValue(phase).setBackground(bg).setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sh.getRange(row, 3).setValue(point).setBackground(bg).setVerticalAlignment('middle');
+    sh.getRange(row, 4, 1, NC - 3).merge().setValue(detail).setBackground(bg).setWrap(true).setVerticalAlignment('middle');
+    row++;
+  });
+
+  // ═══════════════════════════════════════════
+  // 【3】 部門別担当者一覧
+  // ═══════════════════════════════════════════
+  blankRow();
+  sectionHead('【3】 部門別担当者一覧', '#1b5e20');
+
+  const staffTable = [
+    ['部署',          '責任者/リーダー',    '主な担当者',                         '備考'],
+    ['全体（主催）',  'HI-C',              '妹尾真行（共同主催・総合統括）',        ''],
+    ['運営本部',      '石田翔馬（統括マネ）', 'masato morokuma / 武藤剛亘',          ''],
+    ['エントランス',  '＆you⭐︎',           'kazuha tanaka / Shusui Tanaka',      '荷物検査あり'],
+    ['場外P',         'Hide',              '',                                    ''],
+    ['警備',          'YUTO',              '青木陽平（全日本警備保障）',            ''],
+    ['ボランティア',  '南城祐介 / KEITA',  '12名',                                '1人4h×3日'],
+    ['舞台監督',      'Joshua SW',         'ルウジ（サポート）',                   '共同担当'],
+    ['音響（Main）',  'yusuke ono',        'kan2（BARフロア）',                    '沖縄ベース'],
+    ['電源',          '原田邦彦',          '後藤電気チーム',                       '街灯含む'],
+    ['設営',          'hajime（Shinovi）',  'タニシ（ニシタニ）',                   '6/30IN'],
+    ['BAR',           'Hiroto Arai',       'テルキ / そうちゃん / はたくん',       '時給¥3,000'],
+    ['出店管理',      'YMT / ヤマト',      '',                                    ''],
+    ['広報/アーティストケア', 'MARIA',    'Momoko',                               ''],
+    ['物販',          '愛ちゃん',          '',                                    ''],
+    ['キッズ',        'akinoko',           '',                                    ''],
+    ['清掃',          'タイガ',            '',                                    ''],
+    ['シャトルバス',  'ルウジ',            '',                                    ''],
+    ['救護',          '管理棟',            '',                                    ''],
+  ];
+
+  staffTable.forEach((r, i) => {
+    sh.setRowHeight(row, 26);
+    const isHeader = i === 0;
+    const bg = isHeader ? KT.NAVY : (i % 2 === 0 ? '#e8f5e9' : '#f5f5f5');
+    const fc = isHeader ? KT.WHITE : '#000000';
+    r.forEach((val, c) => {
+      const span = c === 2 ? 6 : 1; // 担当者列を広く
+      if (c < NC) {
+        sh.getRange(row, c + 1).setValue(val)
+          .setBackground(bg).setFontColor(fc)
+          .setFontWeight(isHeader ? 'bold' : 'normal')
+          .setVerticalAlignment('middle').setWrap(true);
+      }
+    });
+    // 4列しかないので残りを背景合わせ
+    if (!isHeader) sh.getRange(row, 5, 1, NC - 4).setBackground(bg);
+    row++;
+  });
+
+  // ═══════════════════════════════════════════
+  // 【4】 エントランスオペレーション手順
+  // ═══════════════════════════════════════════
+  blankRow();
+  sectionHead('【4】 エントランスオペレーション手順', '#e65100');
+
+  const entranceOps = [
+    ['①', '事前準備',    '開場2時間前（7:00〜）にエントランス設営完了・荷物検査機材確認'],
+    ['②', 'ゲートオープン', '9:00 ゲートオープン。制服警備員が常時エントランスに常駐'],
+    ['③', 'チケット確認', 'チケット（QRコード or 紙）を確認。当日券なし・リストバンド交換'],
+    ['④', '荷物検査',    '全来場者のバッグチェック。瓶・ペットボトル・紙パックアルコール没収'],
+    ['⑤', '車両入場',    '初日22:00まで / 2・3日目20:00まで。以降は歩行者のみOK'],
+    ['⑥', '深夜ゲート',  '23:00〜6:00は徒歩のみ入場可。警備員が対応'],
+    ['⑦', '不審者対応',  '不審車両・無断入場 → 即座に石田翔馬（統括）に報告'],
+    ['⑧', '緊急時',      '救護 → 管理棟へ誘導。救急要請は警備員 or 石田翔馬に連絡'],
+  ];
+
+  entranceOps.forEach(([num, phase, detail], i) => {
+    sh.setRowHeight(row, 36);
+    const bg = i % 2 === 0 ? '#fff3e0' : '#fff8e1';
+    sh.getRange(row, 1).setValue(num).setBackground('#e65100').setFontColor(KT.WHITE)
+      .setFontWeight('bold').setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sh.getRange(row, 2).setValue(phase).setBackground(bg).setFontWeight('bold').setVerticalAlignment('middle');
+    sh.getRange(row, 3, 1, NC - 2).merge().setValue(detail).setBackground(bg).setWrap(true).setVerticalAlignment('middle');
+    row++;
+  });
+
+  // ═══════════════════════════════════════════
+  // 【5】 緊急対応フロー（内部用）
+  // ═══════════════════════════════════════════
+  blankRow();
+  sectionHead('【5】 緊急対応フロー（内部スタッフのみ）', '#b71c1c');
+
+  const emergency = [
+    ['医療緊急',   '救護場所: 管理棟 / 119番要請後に石田翔馬に連絡'],
+    ['火災',       '初期消火 → 全員避難 → 119番 → 石田翔馬 → 来場者アナウンス'],
+    ['不審者',     '単独で対応しない / 警備員+石田翔馬に即報告'],
+    ['停電',       '後藤電気チーム → 原田邦彦（電源統括）に即連絡'],
+    ['音響トラブル', 'yusuke ono（Main）/ kan2（BARフロア）に連絡'],
+    ['天候悪化',   '石田翔馬 → HI-C・妹尾に報告 → 判断して全体アナウンス'],
+    ['大量入場',   '入場規制 → 警備員 → 石田翔馬に報告・判断仰ぐ'],
+  ];
+
+  sh.setRowHeight(row, 26);
+  sh.getRange(row, 1).setValue('状況').setBackground(KT.NAVY).setFontColor(KT.WHITE).setFontWeight('bold').setVerticalAlignment('middle');
+  sh.getRange(row, 2, 1, NC - 1).merge().setValue('対応手順').setBackground(KT.NAVY).setFontColor(KT.WHITE).setFontWeight('bold').setVerticalAlignment('middle');
+  row++;
+
+  emergency.forEach(([situation, action], i) => {
+    sh.setRowHeight(row, 32);
+    const bg = i % 2 === 0 ? '#ffebee' : '#fff5f5';
+    sh.getRange(row, 1).setValue(situation).setBackground('#c62828').setFontColor(KT.WHITE)
+      .setFontWeight('bold').setVerticalAlignment('middle').setWrap(true);
+    sh.getRange(row, 2, 1, NC - 1).merge().setValue(action).setBackground(bg).setWrap(true).setVerticalAlignment('middle');
+    row++;
+  });
+
+  // ═══════════════════════════════════════════
+  // 【6】 関連スプシリンク
+  // ═══════════════════════════════════════════
+  blankRow();
+  sectionHead('【6】 関連スプレッドシートリンク', '#01579b');
+
+  const links = [
+    ['📊 MOMENT 2026 管理マスターシート',           'https://docs.google.com/spreadsheets/d/13uakCf1IbqxuSVRhrcDoiG6cC6xLU333oeXSeQiFemQ/edit'],
+    ['🏪 出店管理マスター',                          'https://docs.google.com/spreadsheets/d/1ULD9TcMRJDMF1k-I4CBJEX3M_DT2TRLohTQ-xugZTCA/edit'],
+    ['🎤 アーティスト管理【国内回答】',             'https://docs.google.com/spreadsheets/d/1h7HV6ZfnDElblK4nJ_dbtKgAOaNnB1olv2A7946GjYo/edit'],
+    ['📋 タスク・スケジュール管理システム（本シート）', 'https://docs.google.com/spreadsheets/d/1kPCg1fbYfRxrWs7VwALrLAOo4oqONGgLAn3grhYvUfQ/edit'],
+    ['🙋 ボランティアスタッフ募集（回答）',          'https://docs.google.com/spreadsheets/d/1tVEmUOELKBQTkDGew6jRmWaqqlCLwz61wIvRCKFuF_Q/edit'],
+  ];
+
+  links.forEach(([name, url], i) => {
+    sh.setRowHeight(row, 30);
+    const bg = i % 2 === 0 ? '#e3f2fd' : '#f5f5f5';
+    sh.getRange(row, 1, 1, 4).merge().setValue(name).setBackground(bg)
+      .setFontWeight('bold').setVerticalAlignment('middle');
+    sh.getRange(row, 5, 1, NC - 4).merge().setValue(url).setBackground(bg)
+      .setFontColor('#1565c0').setVerticalAlignment('middle').setWrap(true);
+    row++;
+  });
+
+  // ── 列幅 ──
+  sh.setColumnWidth(1, 90);
+  sh.setColumnWidth(2, 140);
+  sh.setColumnWidth(3, 160);
+  sh.setColumnWidth(4, 160);
+  sh.setColumnWidth(5, 160);
+  sh.setColumnWidth(6, 140);
+  sh.setColumnWidth(7, 140);
+  sh.setColumnWidth(8, 120);
+  sh.setColumnWidth(9, 120);
+  sh.setColumnWidth(10, 100);
+
+  Logger.log('✅ 「' + MASTER_SHEET_NAME + '」を作成しました: ' + ss.getUrl());
+  try {
+    SpreadsheetApp.getUi().alert('✅ 「' + MASTER_SHEET_NAME + '」を作成しました！\n\n' + ss.getUrl());
   } catch (e) {}
 }

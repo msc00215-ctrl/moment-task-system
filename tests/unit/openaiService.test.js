@@ -19,7 +19,7 @@ process.env.OPENAI_API_KEY = 'test-key';
 
 jest.resetModules();
 const OpenAI = require('openai');
-const { extractTasks, generateJuniorResponse, extractEquipmentInfo } = require('../../src/services/openaiService');
+const { extractTasks, generateJuniorResponse, extractEquipmentInfo, extractKnowledge } = require('../../src/services/openaiService');
 
 let mockCreate;
 
@@ -118,6 +118,35 @@ describe('extractEquipmentInfo', () => {
   test('APIエラー時は found:false（例外を投げない）', async () => {
     mockCreate.mockRejectedValueOnce(new Error('timeout'));
     const result = await extractEquipmentInfo('テスト');
+    expect(result).toEqual({ found: false });
+  });
+});
+
+describe('extractKnowledge', () => {
+  test('確定情報を正常抽出', async () => {
+    const mockInfo = { found: true, category: '設営', content: 'テントの設営場所はAエリアに決まった', notes: null };
+    mockCreate.mockResolvedValueOnce(makeCompletion(JSON.stringify(mockInfo)));
+    const result = await extractKnowledge('テントの設置場所はAエリアに決まりました');
+    expect(result.found).toBe(true);
+    expect(result.category).toBe('設営');
+    expect(result.content).toBe('テントの設営場所はAエリアに決まった');
+  });
+
+  test('確定情報が含まれない場合は found:false', async () => {
+    mockCreate.mockResolvedValueOnce(makeCompletion(JSON.stringify({ found: false })));
+    const result = await extractKnowledge('明日集合どうしようかな〜');
+    expect(result.found).toBe(false);
+  });
+
+  test('空文字列は即座に found:false', async () => {
+    const result = await extractKnowledge('');
+    expect(result).toEqual({ found: false });
+    expect(mockCreate).not.toHaveBeenCalled();
+  });
+
+  test('APIエラー時は found:false（例外を投げない）', async () => {
+    mockCreate.mockRejectedValueOnce(new Error('timeout'));
+    const result = await extractKnowledge('テスト');
     expect(result).toEqual({ found: false });
   });
 });

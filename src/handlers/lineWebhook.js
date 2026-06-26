@@ -8,7 +8,7 @@
  *    - 質問 → スタッフ/備品/スケジュール情報をもとに回答
  */
 const { verifyLineSignature } = require('../middleware/lineSignature');
-const { extractTasks, generateJuniorResponse, extractEquipmentInfo } = require('../services/openaiService');
+const { extractTasks, generateJuniorResponse, extractEquipmentInfo, extractKnowledge } = require('../services/openaiService');
 const { reply } = require('../services/lineService');
 const { postToGas, getSheetData } = require('../services/gasService');
 const { assertRequired } = require('../config');
@@ -95,6 +95,20 @@ async function handleSingleEvent(event) {
     }).catch(err => logger.error({ err: err.message }, 'GAS タスク送信失敗'));
   }
 
+  // ③b 確定知識抽出（常に・無言・ステルス — fire-and-forget）
+  extractKnowledge(text).then(info => {
+    if (info?.found && info.content) {
+      return postToGas({
+        type:         'knowledge',
+        category:     info.category    || 'その他',
+        content:      info.content,
+        notes:        info.notes       || '',
+        groupName,
+        originalText: maskedText,
+      });
+    }
+  }).catch(err => logger.error({ err: err.message }, 'GAS 知識登録失敗'));
+
   // ④ 「ジュニア」が呼ばれていない → 終了（返答なし）
   if (!isJuniorMention(text) || !replyToken) return;
 
@@ -126,13 +140,14 @@ async function handleSingleEvent(event) {
 
   // ⑥ ジュニア Q&A
   try {
-    const [equipment, staff, vendors, artists] = await Promise.all([
+    const [equipment, staff, vendors, artists, knowledge] = await Promise.all([
       getSheetData('equipment'),
       getSheetData('staff'),
       getSheetData('vendor'),
       getSheetData('artist'),
+      getSheetData('knowledge'),
     ]);
-    const response = await generateJuniorResponse(text, groupName, { equipment, staff, vendors, artists });
+    const response = await generateJuniorResponse(text, groupName, { equipment, staff, vendors, artists, knowledge });
     if (response) await safeReply(replyToken, userId, response);
   } catch (err) {
     logger.error({ err: err.message }, 'Junior応答失敗');
