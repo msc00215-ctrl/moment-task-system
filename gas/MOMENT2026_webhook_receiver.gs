@@ -70,6 +70,9 @@ function doPost(e) {
       upsertEquipment(ss, data);
     } else if (data.type === 'knowledge') {
       upsertKnowledge(ss, data);
+    } else if (data.type === 'restore') {
+      // 「現状の状態に戻れるように！！！」コマンドで全シートを再構築
+      setupAllNewSheets_v2();
     }
 
     return jsonResponse({ ok: true });

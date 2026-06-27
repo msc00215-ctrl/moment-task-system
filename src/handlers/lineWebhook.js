@@ -193,7 +193,16 @@ async function handleSingleEvent(event) {
   if (!isDM && !isJuniorMention(text)) return;
   if (!replyToken) return;
 
-  // ⑤ 備品情報を教えてもらったか確認
+  // ⑤ リストアコマンド: 「現状の状態に戻れるように！！！」でスプシ再構築
+  if (text.includes('現状の状態に戻れるように！！！')) {
+    postToGas({ type: 'restore' })
+      .catch(err => logger.error({ err: err.message }, 'GAS restore 送信失敗'));
+    await safeReply(replyToken, userId,
+      '⏳ ②スプシの再構築を開始したで！\n完了まで30〜60秒かかるかも。\n終わったらスプシを確認してみてな！\n\nhttps://docs.google.com/spreadsheets/d/1kPCg1fbYfRxrWs7VwALrLAOo4oqONGgLAn3grhYvUfQ/edit');
+    return;
+  }
+
+  // ⑦ 備品情報を教えてもらったか確認
   let equipInfo;
   try {
     equipInfo = await extractEquipmentInfo(text);
@@ -219,7 +228,7 @@ async function handleSingleEvent(event) {
     return;
   }
 
-  // ⑥ ジュニア Q&A
+  // ⑧ ジュニア Q&A
   try {
     const [equipment, staff, vendors, artists, knowledge] = await Promise.all([
       getSheetData('equipment'),
