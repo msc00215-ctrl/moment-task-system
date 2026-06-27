@@ -76,6 +76,7 @@ function setupAllNewSheets_v2() {
   Logger.log('🎵 タイムテーブル...');  createTimeTableSheet_v2(ss);
   Logger.log('🍱 賄い管理...');      createMakanaishiSheet_v2(ss);
   Logger.log('📞 緊急連絡先...');    createContactSheet_v2(ss);
+  Logger.log('👥 ボランティア管理...'); createVolunteerSheet(ss);
   Logger.log('📂 シート順番整理...');  reorderSheets_v2(ss);
   Logger.log('✅ 全シート再構築完了！');
   SpreadsheetApp.flush();
@@ -140,6 +141,7 @@ function createDashboardSheet_v2(ss) {
     ['🎵 タイムテーブル','DAY1/DAY2/DAY3 全出演33組','ステージ色分け'],
     ['🍱 賄い管理','個人別食事チェックリスト','7/3〜7/5 朝昼夜'],
     ['📞 スタッフ緊急連絡先','緊急時の連絡先一覧','チーム別'],
+    ['👥 ボランティア管理','ボランティア103名 業務別管理','フォーム回答データ連携'],
     ['─── ボット連携シート（以下変更禁止）───','',''],
     ['📱 LINEリアルタイム','LINEメッセージログ','Bot自動書込'],
     ['📋 タスク（現役）','自動抽出タスク','Bot自動書込'],
@@ -791,6 +793,110 @@ function createContactSheet_v2(ss) {
 }
 
 // ───────────────────────────────────────────
+// 👥 ボランティア管理
+// ───────────────────────────────────────────
+
+function createVolunteerSheet(ss) {
+  const sh = getOrCreateSheet(ss, '👥 ボランティア管理');
+  sh.clear(); sh.setTabColor('#1B5E20');
+
+  // No|名前|フリガナ|決定ポジション|到着日|出発日|来場方法|免許|紹介者|備考
+  [40,160,140,140,80,80,100,60,120,180].forEach((w,i) => sh.setColumnWidth(i+1,w));
+
+  sh.getRange('A1:J1').merge().setValue('👥 MOMENT 2026 — ボランティア管理（業務別）'); styleH1(sh.getRange('A1:J1'));
+  const sub = sh.getRange('A2:J2');
+  sub.merge().setValue('総勢103名 ｜ ボランティアフォーム回答データ ｜ ソース: 1tVEmUOELKBQTkDGew6jRmWaqqlCLwz61wIvRCKFuF_Q ｜ 2026/06/27時点 ｜ ※電話・メール非掲載');
+  sub.setBackground(C.H2_BG).setFontColor(C.GOLD).setFontSize(9)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle');
+  sh.setRowHeight(2,26);
+
+  const HEADERS = ['No','名前','フリガナ','決定ポジション','到着日','出発日','来場方法','免許','紹介者','備考'];
+  sh.getRange(3,1,1,10).setValues([HEADERS]); styleColHeader(sh.getRange(3,1,1,10));
+  sh.setRowHeight(3,32); sh.setFrozenRows(3);
+
+  const depts = [
+    { name:'BARスタッフ',     bg:'#B2EBF2', fg:'#005070',
+      members:['Sara','清澤 未来','須知 杏奈','須山 あを','田村 友理佳','藤田 真由','松村 潤人','芹沢 孝哉',
+               'Acushla Ayla','松本 葵','矢部 優花','山口 空','Hao Bui','Jiri Swen','Patrick Lothoz',
+               '佐藤 雄亮','東宮 慎之助','Natalia Ramadori','菱川 晶','Planelles Leo'] },
+    { name:'エントランス（受付）', bg:'#C8E6C9', fg:'#1B5E20',
+      members:['Aurelia Jessica','穴沢 有希奈','粟井 真結','粟井 萌絵','伊藤 はるか','宇良 匡士郎',
+               '多田 小春','服部 香琳','保科 巴蓮','Mykyta Kovalenko','宮崎 恵巳','山野 穂佳'] },
+    { name:'セキュリティ',    bg:'#BBDEFB', fg:'#0D47A1',
+      members:['Geordie Wilson','稲井 千夏','猪田 由理子','北村 美咲','金 愛奈','キム チュナ',
+               '重里 久史','瀬古 麗菜','竹 春乃','谷口 能也','Ho Wai Sze','Malorie Stanley','山崎 優子'] },
+    { name:'荷物検査',        bg:'#FFF9C4', fg:'#7B5A00',
+      members:['伊禮 心夏','小野 陽向','新城 弘樹','多田 浩平','野田 レキオ','橋本 航'] },
+    { name:'場外駐車場',      bg:'#E1BEE7', fg:'#4A0E7B',
+      members:['浅津 梨子','杉木 望愛','小川 遼馬','石本 耀介','鷲尾 昂世','渡邉 龍矢',
+               'サジャル アユミ ツボイ','コナーズ 東満寿','小林 佳蓮','中野 翔太',
+               '末廣 啓史','田中 愛佳','高橋 謙仁朗'] },
+    { name:'場内駐車場',      bg:'#F8BBD0', fg:'#880E4F',
+      members:['鍛治 尚英','若園 優世','村上 圭','関 翔馬','米谷 航','アテュエニ ジュニア','菅沼 千夏'] },
+    { name:'シャトルバス',    bg:'#FFE0B2', fg:'#6B4500',
+      members:['伊東 憲輝','岩崎 正亨','佐伯 安王','大関 翠','岡崎 佑生','柏村 享也','山崎 力輝夫'] },
+    { name:'アーティストケア', bg:'#FCEEF5', fg:'#7B1B5E',
+      members:['大井 博絵','筒井 和斗','分藤 貴文','Kipp Hendricks'] },
+    { name:'アーティスト送迎', bg:'#EEF5FC', fg:'#1B4D7B',
+      members:['東 颯太朗','狩俣 力士'] },
+    { name:'キッズエリア',    bg:'#DCEDC8', fg:'#33691E',
+      members:['柏村 郁美','西島 春菜','野口 房子','橋本 瞳衣','Betsie K Slaby'] },
+    { name:'設営/撤収',       bg:'#EDE7F6', fg:'#4A0E7B',
+      members:['溝口 秋平','伊藤 楽','コステロ 是允','竹内 涼平','Mori Silva Hugo Tadashi','金沢 真由'] },
+    { name:'舞台監督補佐',    bg:'#E8EAF6', fg:'#1A1A3C',
+      members:['田村 かれん'] },
+    { name:'カメラ/映像',     bg:'#F3E5F5', fg:'#4A0E7B',
+      members:['jacK'] },
+    { name:'出店サポート',    bg:'#FFF5EE', fg:'#7B3B1B',
+      members:['坂元 大輔','作山 けいと','中村 利玖'] },
+    { name:'物販',            bg:'#FFF9E6', fg:'#6B4500',
+      members:['姫野 尚紀','コステロ 誌苑'] },
+    { name:'トイレマネージャー', bg:'#E8F8F5', fg:'#0E5C48',
+      members:['中道 大雅'] },
+  ];
+
+  let row = 4;
+  let no  = 1;
+
+  depts.forEach(dept => {
+    // 部署ヘッダー行
+    sh.getRange(row,1,1,10).merge()
+      .setValue('■ ' + dept.name + '（' + dept.members.length + '名）');
+    sh.getRange(row,1,1,10)
+      .setBackground(dept.bg).setFontColor(dept.fg)
+      .setFontWeight('bold').setFontSize(11)
+      .setHorizontalAlignment('left').setVerticalAlignment('middle')
+      .setBorder(true,true,true,true,false,false,'#888888',SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+    sh.setRowHeight(row,38); row++;
+
+    // メンバー行
+    dept.members.forEach((name,i) => {
+      sh.getRange(row,1,1,10).setValues([[no, name, '', dept.name, '', '', '', '', '', '']]);
+      sh.getRange(row,1,1,10)
+        .setBackground(i%2===0 ? C.ROW_A_BG : C.ROW_B_BG)
+        .setFontColor(C.DARK).setVerticalAlignment('middle')
+        .setBorder(true,true,true,true,true,true,'#CCCCCC',SpreadsheetApp.BorderStyle.SOLID);
+      sh.getRange(row,2).setFontWeight('bold');
+      sh.setRowHeight(row,28);
+      no++; row++;
+    });
+  });
+
+  // 合計行
+  sh.getRange(row,1,1,10).merge()
+    .setValue('✅ ボランティア合計 ' + (no-1) + '名 ｜ ※ EXCLUDE: コワセ（マホ）・大野挙汰（キャンセル）');
+  sh.getRange(row,1,1,10)
+    .setBackground(C.TOTAL_BG).setFontColor(C.TOTAL_FG)
+    .setFontWeight('bold').setFontSize(10)
+    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setBorder(true,true,true,true,false,false,'#000000',SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
+  sh.setRowHeight(row,36);
+
+  // フィルター（ヘッダー行から）
+  if (row > 3) sh.getRange(3,1,row-3,10).createFilter();
+}
+
+// ───────────────────────────────────────────
 // シート順番整理
 // ───────────────────────────────────────────
 
@@ -798,7 +904,7 @@ function reorderSheets_v2(ss) {
   const ORDER = [
     '🌟 表紙','📅 工程表（全体）','📅 工程表（MOMENTチーム）',
     '🚛 トラック運行表','🎤 アーティストケア','🎵 タイムテーブル（暫定）',
-    '🍱 賄い管理','📞 スタッフ緊急連絡先',
+    '🍱 賄い管理','📞 スタッフ緊急連絡先','👥 ボランティア管理',
   ];
   ORDER.forEach((name,idx) => {
     const sh = ss.getSheetByName(name);
