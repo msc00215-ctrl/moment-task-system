@@ -638,138 +638,82 @@ function createMakanaishiSheet_v2(ss) {
   const sh = getOrCreateSheet(ss, '🍱 賄い管理');
   sh.clear(); sh.setTabColor('#1B7B2C');
 
-  // 5列: グループ | 人数 | 昼 | 18時 | 備考
-  [220, 70, 90, 90, 320].forEach((w,i) => sh.setColumnWidth(i+1,w));
+  // 5列: グループ | 7/3（金） | 7/4（土） | 7/5（日） | 備考
+  [220, 90, 90, 90, 290].forEach((w,i) => sh.setColumnWidth(i+1,w));
 
-  sh.getRange('A1:E1').merge().setValue('🍱 MOMENT 2026 — 賄い 食数管理（グループ別）7/3〜7/5');
+  sh.getRange('A1:E1').merge().setValue('🍱 MOMENT 2026 — 賄い 人数管理（グループ別）7/3〜7/5');
   styleH1(sh.getRange('A1:E1'));
   sh.setRowHeight(1, 50);
 
   sh.getRange('A2:E2').merge()
-    .setValue('数値 = 提供食数 ｜ - = 提供なし ｜ 提供回数: 昼 / 18時 の2回 ｜ ※アーティスト分は別途加算');
+    .setValue('提供回数: 昼 / 18時 の2回 ｜ 数値 = 在席人数 ｜ ※アーティスト分は別途加算');
   sh.getRange('A2:E2').setBackground(C.H2_BG).setFontColor(C.GOLD).setFontSize(10)
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sh.setRowHeight(2, 28);
 
-  sh.getRange(3, 1, 1, 5).setValues([['グループ', '人数', '昼', '18時', '備考']]);
+  // 列ヘッダー
+  sh.getRange(3, 1, 1, 5).setValues([['グループ', '7/3（金）', '7/4（土）', '7/5（日）', '備考']]);
   styleColHeader(sh.getRange(3, 1, 1, 5));
   sh.getRange(3, 2, 1, 3).setHorizontalAlignment('center');
   sh.setRowHeight(3, 36);
   sh.setFrozenRows(3);
 
-  const D = '-';
-  // days: [{ noon, e }] for 7/3, 7/4, 7/5  (e = 18時)
+  // [グループ名, 7/3人数, 7/4人数, 7/5人数, bg, fg, 備考]
   const groups = [
     {
       name: 'MOMENTメンバー（コアスタッフ）',
-      count: 6,
-      days: [{ noon:6, e:6 }, { noon:6, e:6 }, { noon:6, e:6 }],
+      counts: [6, 6, 6],
       bg: C.CAT_MOMENT_BG, fg: C.CAT_MOMENT_FG,
-      note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道 ｜ 全日6食提供（昼+18時×3日）',
+      note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道',
     },
     {
-      name: '公式スタッフ（音響/照明/電源/映像/舞台監督/デコ/LIVE PAINT等）',
-      count: '27名＋α',
-      // 技術8名 + デコ14名(ZIGN6+Samaya8) + LIVE PAINT 5名 = 27名固定
-      // 7/5 18時: デコ撤収済みのためLIVE PAINT 5名のみ
-      days: [{ noon:27, e:27 }, { noon:27, e:27 }, { noon:22, e:5 }],
+      name: '公式スタッフ（音響/照明/電源/映像/デコ/LIVE PAINT等）',
+      counts: [27, 27, 22],
       bg: C.PAID_BG, fg: C.PAID_FG,
-      note: '技術8名（SOL/kamba/山脇Shu/Ruriko/KAMADEN/VERY/CRACKWORKS/宮野）＋デコ14名＋LIVE PAINT 5名 ｜ ※アーティスト（20〜35名）は別途加算',
+      note: '技術8名＋デコ14名（ZIGN6+Samaya8）＋LIVE PAINT 5名 ｜ 7/5は撤収のため22名 ｜ ※アーティスト別途',
     },
     {
       name: 'ボランティア',
-      count: 103,
-      // 7/3: 103名 / 7/4〜7/5: 設営班6名が抜けて97名
-      days: [{ noon:103, e:103 }, { noon:97, e:97 }, { noon:97, e:97 }],
+      counts: [103, 97, 97],
       bg: C.VOL_BG, fg: C.VOL_FG,
       note: '7/3: 103名 / 7/4〜7/5: 97名（設営班6名は7/3まで）',
     },
   ];
 
-  const DAY_LABELS = ['7/3（金）', '7/4（土）', '7/5（日）'];
   let row = 4;
-  const dayTotals = [];
 
-  for (let d = 0; d < 3; d++) {
-    // 日付バナー
-    sh.getRange(row, 1, 1, 5).merge().setValue('━━  ' + DAY_LABELS[d] + '  ━━');
-    sh.getRange(row, 1, 1, 5)
-      .setBackground(C.H2_BG).setFontColor(C.GOLD)
-      .setFontWeight('bold').setFontSize(13)
-      .setHorizontalAlignment('center').setVerticalAlignment('middle')
-      .setBorder(true,true,true,true,false,false,'#444488',SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-    sh.setRowHeight(row, 38);
-    row++;
-
-    let dtN = 0, dtE = 0;
-
-    groups.forEach(g => {
-      const day = g.days[d];
-      const nV = day.noon > 0 ? day.noon : D;
-      const eV = day.e   > 0 ? day.e   : D;
-
-      sh.getRange(row, 1, 1, 5).setValues([
-        [g.name,
-         typeof g.count === 'number' ? g.count + '名' : g.count,
-         nV, eV,
-         d === 0 ? g.note : '']
-      ]);
-      sh.getRange(row, 1, 1, 5)
-        .setBackground(g.bg).setFontColor(g.fg)
-        .setVerticalAlignment('middle')
-        .setBorder(true,true,true,true,true,true,'#CCCCCC',SpreadsheetApp.BorderStyle.SOLID);
-      sh.getRange(row, 1).setFontWeight('bold').setHorizontalAlignment('left');
-      sh.getRange(row, 2).setHorizontalAlignment('center').setFontWeight('bold').setFontSize(12);
-      sh.getRange(row, 3, 1, 2).setHorizontalAlignment('center').setFontWeight('bold').setFontSize(15);
-      sh.getRange(row, 5).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
-      sh.setRowHeight(row, 42);
-
-      // 食数ありのセルを緑強調
-      [{ c:3, v:day.noon }, { c:4, v:day.e }].forEach(({c,v}) => {
-        if (v > 0) sh.getRange(row,c).setBackground('#C8E6C9').setFontColor('#1B5E20');
-      });
-
-      dtN += day.noon; dtE += day.e;
-      row++;
-    });
-
-    dayTotals.push({ n: dtN, e: dtE });
-    const dt = dayTotals[d];
-
-    // 日計行
+  // グループ行
+  groups.forEach(g => {
     sh.getRange(row, 1, 1, 5).setValues([
-      [DAY_LABELS[d] + '　合計', '', dt.n, dt.e,
-       '※アーティスト分（約20〜35名）を加算すること']
+      [g.name, g.counts[0], g.counts[1], g.counts[2], g.note]
     ]);
     sh.getRange(row, 1, 1, 5)
-      .setBackground(C.TOTAL_BG).setFontColor(C.TOTAL_FG)
-      .setFontWeight('bold').setFontSize(12)
+      .setBackground(g.bg).setFontColor(g.fg)
       .setVerticalAlignment('middle')
-      .setBorder(true,true,true,true,false,false,'#000000',SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-    sh.getRange(row, 1).setHorizontalAlignment('left');
-    sh.getRange(row, 3, 1, 2).setHorizontalAlignment('center').setFontSize(17);
+      .setBorder(true,true,true,true,true,true,'#CCCCCC',SpreadsheetApp.BorderStyle.SOLID);
+    sh.getRange(row, 1).setFontWeight('bold').setHorizontalAlignment('left');
+    sh.getRange(row, 2, 1, 3)
+      .setHorizontalAlignment('center').setFontWeight('bold').setFontSize(18);
     sh.getRange(row, 5).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
-    sh.setRowHeight(row, 46);
+    sh.setRowHeight(row, 52);
     row++;
-  }
+  });
 
-  // 3日間 グランド合計
-  const gN     = dayTotals.reduce((s,t) => s + t.n, 0);
-  const gE     = dayTotals.reduce((s,t) => s + t.e, 0);
-  const gTotal = gN + gE;
+  // 合計行
+  const totals = [0, 1, 2].map(d => groups.reduce((s, g) => s + g.counts[d], 0));
   sh.getRange(row, 1, 1, 5).setValues([
-    ['3日間 合計（アーティスト除く）', '', gN, gE,
-     '合計 ' + gTotal + '食（≈）｜ アーティスト分を加算してオーダー数を確定']
+    ['合計', totals[0], totals[1], totals[2],
+     '賄い提供食数: 昼×人数 ＋ 18時×人数 ｜ ※アーティスト（約20〜35名）を加算すること']
   ]);
   sh.getRange(row, 1, 1, 5)
     .setBackground('#0D0D1A').setFontColor(C.GOLD)
     .setFontWeight('bold').setFontSize(13)
-    .setHorizontalAlignment('center').setVerticalAlignment('middle')
+    .setVerticalAlignment('middle')
     .setBorder(true,true,true,true,false,false,'#C9A84C',SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   sh.getRange(row, 1).setHorizontalAlignment('left');
-  sh.getRange(row, 3, 1, 2).setFontSize(19);
+  sh.getRange(row, 2, 1, 3).setHorizontalAlignment('center').setFontSize(22);
   sh.getRange(row, 5).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
-  sh.setRowHeight(row, 54);
+  sh.setRowHeight(row, 58);
   row++;
 
   // アレルギー注意書き
