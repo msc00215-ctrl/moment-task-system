@@ -638,50 +638,51 @@ function createMakanaishiSheet_v2(ss) {
   const sh = getOrCreateSheet(ss, '🍱 賄い管理');
   sh.clear(); sh.setTabColor('#1B7B2C');
 
-  // 6列: グループ | 人数 | 朝 | 昼 | 夜 | 備考
-  [220, 70, 70, 70, 70, 290].forEach((w,i) => sh.setColumnWidth(i+1,w));
+  // 5列: グループ | 人数 | 昼 | 18時 | 備考
+  [220, 70, 90, 90, 320].forEach((w,i) => sh.setColumnWidth(i+1,w));
 
-  sh.getRange('A1:F1').merge().setValue('🍱 MOMENT 2026 — 賄い 食数管理（グループ別）7/3〜7/5');
-  styleH1(sh.getRange('A1:F1'));
+  sh.getRange('A1:E1').merge().setValue('🍱 MOMENT 2026 — 賄い 食数管理（グループ別）7/3〜7/5');
+  styleH1(sh.getRange('A1:E1'));
   sh.setRowHeight(1, 50);
 
-  sh.getRange('A2:F2').merge()
-    .setValue('数値 = 提供食数 ｜ - = 提供なし ｜ 朝 / 昼 / 夜 ｜ ※アーティスト分は別途加算');
-  sh.getRange('A2:F2').setBackground(C.H2_BG).setFontColor(C.GOLD).setFontSize(10)
+  sh.getRange('A2:E2').merge()
+    .setValue('数値 = 提供食数 ｜ - = 提供なし ｜ 提供回数: 昼 / 18時 の2回 ｜ ※アーティスト分は別途加算');
+  sh.getRange('A2:E2').setBackground(C.H2_BG).setFontColor(C.GOLD).setFontSize(10)
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sh.setRowHeight(2, 28);
 
-  sh.getRange(3, 1, 1, 6).setValues([['グループ', '人数', '朝', '昼', '夜', '備考']]);
-  styleColHeader(sh.getRange(3, 1, 1, 6));
-  sh.getRange(3, 2, 1, 4).setHorizontalAlignment('center');
+  sh.getRange(3, 1, 1, 5).setValues([['グループ', '人数', '昼', '18時', '備考']]);
+  styleColHeader(sh.getRange(3, 1, 1, 5));
+  sh.getRange(3, 2, 1, 3).setHorizontalAlignment('center');
   sh.setRowHeight(3, 36);
   sh.setFrozenRows(3);
 
   const D = '-';
-  // days: [{ am, n, pm }] for 7/3, 7/4, 7/5
+  // days: [{ noon, e }] for 7/3, 7/4, 7/5  (e = 18時)
   const groups = [
     {
       name: 'MOMENTメンバー（コアスタッフ）',
       count: 6,
-      days: [{ am:6, n:6, pm:6 }, { am:6, n:6, pm:6 }, { am:6, n:6, pm:6 }],
+      days: [{ noon:6, e:6 }, { noon:6, e:6 }, { noon:6, e:6 }],
       bg: C.CAT_MOMENT_BG, fg: C.CAT_MOMENT_FG,
-      note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道 ｜ 全日9食提供',
+      note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道 ｜ 全日6食提供（昼+18時×3日）',
     },
     {
       name: '公式スタッフ（音響/照明/電源/映像/舞台監督/デコ/LIVE PAINT等）',
       count: '27名＋α',
-      // 技術8名 + デコ14名(ZIGN6+Samaya8) + LIVE PAINT 5名 = 27名固定 + アーティスト変動
-      // 技術: 7/3昼〜7/5昼、デコ/LIVE PAINT: 7/3昼〜7/5昼(7/5夜はLIVE PAINT 5名のみ)
-      days: [{ am:0, n:27, pm:27 }, { am:8, n:27, pm:27 }, { am:8, n:22, pm:5 }],
+      // 技術8名 + デコ14名(ZIGN6+Samaya8) + LIVE PAINT 5名 = 27名固定
+      // 7/5 18時: デコ撤収済みのためLIVE PAINT 5名のみ
+      days: [{ noon:27, e:27 }, { noon:27, e:27 }, { noon:22, e:5 }],
       bg: C.PAID_BG, fg: C.PAID_FG,
       note: '技術8名（SOL/kamba/山脇Shu/Ruriko/KAMADEN/VERY/CRACKWORKS/宮野）＋デコ14名＋LIVE PAINT 5名 ｜ ※アーティスト（20〜35名）は別途加算',
     },
     {
       name: 'ボランティア',
       count: 103,
-      days: [{ am:0, n:103, pm:103 }, { am:0, n:97, pm:97 }, { am:0, n:97, pm:97 }],
+      // 7/3: 103名 / 7/4〜7/5: 設営班6名が抜けて97名
+      days: [{ noon:103, e:103 }, { noon:97, e:97 }, { noon:97, e:97 }],
       bg: C.VOL_BG, fg: C.VOL_FG,
-      note: '7/3: 103名 / 7/4〜7/5: 97名（設営班6名は7/3まで）｜ 昼・夜のみ',
+      note: '7/3: 103名 / 7/4〜7/5: 97名（設営班6名は7/3まで）',
     },
   ];
 
@@ -691,8 +692,8 @@ function createMakanaishiSheet_v2(ss) {
 
   for (let d = 0; d < 3; d++) {
     // 日付バナー
-    sh.getRange(row, 1, 1, 6).merge().setValue('━━  ' + DAY_LABELS[d] + '  ━━');
-    sh.getRange(row, 1, 1, 6)
+    sh.getRange(row, 1, 1, 5).merge().setValue('━━  ' + DAY_LABELS[d] + '  ━━');
+    sh.getRange(row, 1, 1, 5)
       .setBackground(C.H2_BG).setFontColor(C.GOLD)
       .setFontWeight('bold').setFontSize(13)
       .setHorizontalAlignment('center').setVerticalAlignment('middle')
@@ -700,85 +701,81 @@ function createMakanaishiSheet_v2(ss) {
     sh.setRowHeight(row, 38);
     row++;
 
-    let dtAm = 0, dtN = 0, dtPm = 0;
+    let dtN = 0, dtE = 0;
 
     groups.forEach(g => {
       const day = g.days[d];
-      const amV = day.am > 0 ? day.am : D;
-      const nV  = day.n  > 0 ? day.n  : D;
-      const pmV = day.pm > 0 ? day.pm : D;
+      const nV = day.noon > 0 ? day.noon : D;
+      const eV = day.e   > 0 ? day.e   : D;
 
-      sh.getRange(row, 1, 1, 6).setValues([
+      sh.getRange(row, 1, 1, 5).setValues([
         [g.name,
          typeof g.count === 'number' ? g.count + '名' : g.count,
-         amV, nV, pmV,
+         nV, eV,
          d === 0 ? g.note : '']
       ]);
-      sh.getRange(row, 1, 1, 6)
+      sh.getRange(row, 1, 1, 5)
         .setBackground(g.bg).setFontColor(g.fg)
         .setVerticalAlignment('middle')
         .setBorder(true,true,true,true,true,true,'#CCCCCC',SpreadsheetApp.BorderStyle.SOLID);
       sh.getRange(row, 1).setFontWeight('bold').setHorizontalAlignment('left');
       sh.getRange(row, 2).setHorizontalAlignment('center').setFontWeight('bold').setFontSize(12);
-      sh.getRange(row, 3, 1, 3).setHorizontalAlignment('center').setFontWeight('bold').setFontSize(13);
-      sh.getRange(row, 6).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
-      sh.setRowHeight(row, 40);
+      sh.getRange(row, 3, 1, 2).setHorizontalAlignment('center').setFontWeight('bold').setFontSize(15);
+      sh.getRange(row, 5).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
+      sh.setRowHeight(row, 42);
 
       // 食数ありのセルを緑強調
-      [{ c:3, v:day.am }, { c:4, v:day.n }, { c:5, v:day.pm }].forEach(({c,v}) => {
+      [{ c:3, v:day.noon }, { c:4, v:day.e }].forEach(({c,v}) => {
         if (v > 0) sh.getRange(row,c).setBackground('#C8E6C9').setFontColor('#1B5E20');
       });
 
-      dtAm += day.am; dtN += day.n; dtPm += day.pm;
+      dtN += day.noon; dtE += day.e;
       row++;
     });
 
-    dayTotals.push({ am: dtAm, n: dtN, pm: dtPm });
+    dayTotals.push({ n: dtN, e: dtE });
     const dt = dayTotals[d];
 
     // 日計行
-    sh.getRange(row, 1, 1, 6).setValues([
-      [DAY_LABELS[d] + '　合計', '',
-       dt.am > 0 ? dt.am : D, dt.n, dt.pm,
+    sh.getRange(row, 1, 1, 5).setValues([
+      [DAY_LABELS[d] + '　合計', '', dt.n, dt.e,
        '※アーティスト分（約20〜35名）を加算すること']
     ]);
-    sh.getRange(row, 1, 1, 6)
+    sh.getRange(row, 1, 1, 5)
       .setBackground(C.TOTAL_BG).setFontColor(C.TOTAL_FG)
       .setFontWeight('bold').setFontSize(12)
       .setVerticalAlignment('middle')
       .setBorder(true,true,true,true,false,false,'#000000',SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
     sh.getRange(row, 1).setHorizontalAlignment('left');
-    sh.getRange(row, 3, 1, 3).setHorizontalAlignment('center').setFontSize(15);
-    sh.getRange(row, 6).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
-    sh.setRowHeight(row, 44);
+    sh.getRange(row, 3, 1, 2).setHorizontalAlignment('center').setFontSize(17);
+    sh.getRange(row, 5).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
+    sh.setRowHeight(row, 46);
     row++;
   }
 
   // 3日間 グランド合計
-  const gAm    = dayTotals.reduce((s,t) => s + t.am, 0);
-  const gN     = dayTotals.reduce((s,t) => s + t.n,  0);
-  const gPm    = dayTotals.reduce((s,t) => s + t.pm, 0);
-  const gTotal = gAm + gN + gPm;
-  sh.getRange(row, 1, 1, 6).setValues([
-    ['3日間 合計（アーティスト除く）', '',
-     gAm > 0 ? gAm : D, gN, gPm,
+  const gN     = dayTotals.reduce((s,t) => s + t.n, 0);
+  const gE     = dayTotals.reduce((s,t) => s + t.e, 0);
+  const gTotal = gN + gE;
+  sh.getRange(row, 1, 1, 5).setValues([
+    ['3日間 合計（アーティスト除く）', '', gN, gE,
      '合計 ' + gTotal + '食（≈）｜ アーティスト分を加算してオーダー数を確定']
   ]);
-  sh.getRange(row, 1, 1, 6)
+  sh.getRange(row, 1, 1, 5)
     .setBackground('#0D0D1A').setFontColor(C.GOLD)
     .setFontWeight('bold').setFontSize(13)
     .setHorizontalAlignment('center').setVerticalAlignment('middle')
     .setBorder(true,true,true,true,false,false,'#C9A84C',SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
   sh.getRange(row, 1).setHorizontalAlignment('left');
-  sh.getRange(row, 3, 1, 3).setFontSize(17);
-  sh.getRange(row, 6).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
-  sh.setRowHeight(row, 52);
+  sh.getRange(row, 3, 1, 2).setFontSize(19);
+  sh.getRange(row, 5).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
+  sh.setRowHeight(row, 54);
   row++;
 
   // アレルギー注意書き
-  sh.getRange(row, 1, 1, 6).merge()
+  sh.getRange(row, 1, 1, 5).merge()
     .setValue('🌱 アレルギー・食事制限: JakoJako / Sibel ベジタリアン ｜ Hybrid Man (Julien) ベジタリアン ｜ ※個別対応要確認');
-  sh.getRange(row, 1, 1, 6).setBackground(C.ALERT_BG).setFontColor(C.ALERT_FG)
+  sh.getRange(row, 1, 1, 5).setBackground(C.ALERT_BG).setFontColor(C.ALERT_FG)
     .setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle')
     .setBorder(true,true,true,true,false,false,'#FFD700',SpreadsheetApp.BorderStyle.SOLID);
   sh.setRowHeight(row, 36);
