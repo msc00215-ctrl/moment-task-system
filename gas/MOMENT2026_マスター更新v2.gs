@@ -668,18 +668,13 @@ function createMakanaishiSheet_v2(ss) {
       note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道 ｜ 全日9食提供',
     },
     {
-      name: '公式スタッフ（音響/照明/電源/映像/舞台監督）',
-      count: 8,
-      days: [{ am:0, n:8, pm:8 }, { am:8, n:8, pm:8 }, { am:8, n:8, pm:0 }],
+      name: '公式スタッフ（音響/照明/電源/映像/舞台監督/デコ/LIVE PAINT等）',
+      count: '27名＋α',
+      // 技術8名 + デコ14名(ZIGN6+Samaya8) + LIVE PAINT 5名 = 27名固定 + アーティスト変動
+      // 技術: 7/3昼〜7/5昼、デコ/LIVE PAINT: 7/3昼〜7/5昼(7/5夜はLIVE PAINT 5名のみ)
+      days: [{ am:0, n:27, pm:27 }, { am:8, n:27, pm:27 }, { am:8, n:22, pm:5 }],
       bg: C.PAID_BG, fg: C.PAID_FG,
-      note: 'SOL/kamba/山脇Shu/Ruriko/KAMADEN/VERY/CRACKWORKS/宮野 ｜ 7/3昼〜7/5昼（7食/人）',
-    },
-    {
-      name: 'ギャラ発生スタッフ（デコ・LIVE PAINT・アーティスト等）',
-      count: '19名＋α',
-      days: [{ am:0, n:19, pm:19 }, { am:0, n:19, pm:19 }, { am:0, n:14, pm:5 }],
-      bg: C.CAT_DECO_BG, fg: C.CAT_DECO_FG,
-      note: 'デコ14名（ZIGN 6+Samaya 8）+LIVE PAINT 5名 ｜ ※アーティスト（20〜35名）は出演日変動・別途加算',
+      note: '技術8名（SOL/kamba/山脇Shu/Ruriko/KAMADEN/VERY/CRACKWORKS/宮野）＋デコ14名＋LIVE PAINT 5名 ｜ ※アーティスト（20〜35名）は別途加算',
     },
     {
       name: 'ボランティア',
