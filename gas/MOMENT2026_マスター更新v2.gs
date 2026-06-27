@@ -638,91 +638,178 @@ function createMakanaishiSheet_v2(ss) {
   const sh = getOrCreateSheet(ss, '🍱 賄い管理');
   sh.clear(); sh.setTabColor('#1B7B2C');
 
-  // 5列: グループ | 7/3（金） | 7/4（土） | 7/5（日） | 備考
-  [220, 90, 90, 90, 290].forEach((w,i) => sh.setColumnWidth(i+1,w));
+  // 4列: 時刻 | グループ | 人数 | 備考
+  [80, 230, 75, 310].forEach((w,i) => sh.setColumnWidth(i+1,w));
 
-  sh.getRange('A1:E1').merge().setValue('🍱 MOMENT 2026 — 賄い 人数管理（グループ別）7/3〜7/5');
-  styleH1(sh.getRange('A1:E1'));
+  // タイトル
+  sh.getRange('A1:D1').merge().setValue('🍱 MOMENT 2026 — 賄い タイムテーブル 7/3〜7/5');
+  styleH1(sh.getRange('A1:D1'));
   sh.setRowHeight(1, 50);
 
-  sh.getRange('A2:E2').merge()
-    .setValue('提供回数: 昼 / 18時 の2回 ｜ 数値 = 在席人数 ｜ ※アーティスト分は別途加算');
-  sh.getRange('A2:E2').setBackground(C.H2_BG).setFontColor(C.GOLD).setFontSize(10)
+  // サブタイトル
+  sh.getRange('A2:D2').merge()
+    .setValue('提供: 12:00（昼） / 18:00 の2回 ｜ 人数 = 在席人数 ｜ ※アーティスト分（約20〜35名）は別途加算');
+  sh.getRange('A2:D2').setBackground(C.H2_BG).setFontColor(C.GOLD).setFontSize(10)
     .setHorizontalAlignment('center').setVerticalAlignment('middle');
   sh.setRowHeight(2, 28);
 
   // 列ヘッダー
-  sh.getRange(3, 1, 1, 5).setValues([['グループ', '7/3（金）', '7/4（土）', '7/5（日）', '備考']]);
-  styleColHeader(sh.getRange(3, 1, 1, 5));
-  sh.getRange(3, 2, 1, 3).setHorizontalAlignment('center');
+  sh.getRange(3, 1, 1, 4).setValues([['時刻', 'グループ', '人数', '備考']]);
+  styleColHeader(sh.getRange(3, 1, 1, 4));
+  sh.getRange(3, 1, 1, 4).setHorizontalAlignment('center');
   sh.setRowHeight(3, 36);
   sh.setFrozenRows(3);
 
-  // [グループ名, 7/3人数, 7/4人数, 7/5人数, bg, fg, 備考]
   const groups = [
+    { name: 'MOMENTメンバー', bg: C.CAT_MOMENT_BG, fg: C.CAT_MOMENT_FG },
+    { name: '公式スタッフ',   bg: C.PAID_BG,        fg: C.PAID_FG        },
+    { name: 'ボランティア',   bg: C.VOL_BG,         fg: C.VOL_FG         },
+  ];
+
+  const days = [
     {
-      name: 'MOMENTメンバー（コアスタッフ）',
-      counts: [6, 6, 6],
-      bg: C.CAT_MOMENT_BG, fg: C.CAT_MOMENT_FG,
-      note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道',
+      label: '━━━━━  7/3（金）  ━━━━━',
+      slots: [
+        {
+          time: '12:00\n（昼）',
+          data: [
+            { count: 6,   note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道' },
+            { count: 27,  note: '技術8名 ＋ デコ14名（ZIGN6+Samaya8）＋ LIVE PAINT 5名' },
+            { count: 103, note: '設営班含む103名' },
+          ],
+          totalNote: '※アーティスト（約20〜35名）を加算すること',
+        },
+        {
+          time: '18:00',
+          data: [
+            { count: 6,   note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道' },
+            { count: 27,  note: '技術8名 ＋ デコ14名（ZIGN6+Samaya8）＋ LIVE PAINT 5名' },
+            { count: 103, note: '設営班含む103名' },
+          ],
+          totalNote: '※アーティスト（約20〜35名）を加算すること',
+        },
+      ],
     },
     {
-      name: '公式スタッフ（音響/照明/電源/映像/デコ/LIVE PAINT等）',
-      counts: [27, 27, 22],
-      bg: C.PAID_BG, fg: C.PAID_FG,
-      note: '技術8名＋デコ14名（ZIGN6+Samaya8）＋LIVE PAINT 5名 ｜ 7/5は撤収のため22名 ｜ ※アーティスト別途',
+      label: '━━━━━  7/4（土）  ━━━━━',
+      slots: [
+        {
+          time: '12:00\n（昼）',
+          data: [
+            { count: 6,  note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道' },
+            { count: 27, note: '技術8名 ＋ デコ14名（ZIGN6+Samaya8）＋ LIVE PAINT 5名' },
+            { count: 97, note: '設営班6名は7/3まで → 97名' },
+          ],
+          totalNote: '※アーティスト（約20〜35名）を加算すること',
+        },
+        {
+          time: '18:00',
+          data: [
+            { count: 6,  note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道' },
+            { count: 27, note: '技術8名 ＋ デコ14名（ZIGN6+Samaya8）＋ LIVE PAINT 5名' },
+            { count: 97, note: '97名' },
+          ],
+          totalNote: '※アーティスト（約20〜35名）を加算すること',
+        },
+      ],
     },
     {
-      name: 'ボランティア',
-      counts: [103, 97, 97],
-      bg: C.VOL_BG, fg: C.VOL_FG,
-      note: '7/3: 103名 / 7/4〜7/5: 97名（設営班6名は7/3まで）',
+      label: '━━━━━  7/5（日）  ━━━━━',
+      slots: [
+        {
+          time: '12:00\n（昼）',
+          data: [
+            { count: 6,  note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道' },
+            { count: 27, note: '技術8名 ＋ デコ14名（ZIGN6+Samaya8）＋ LIVE PAINT 5名' },
+            { count: 97, note: '97名' },
+          ],
+          totalNote: '※アーティスト（約20〜35名）を加算すること',
+        },
+        {
+          time: '18:00',
+          data: [
+            { count: 6,  note: 'HI-C / MARIA / 妹尾 / YMT / 南城 / 中道' },
+            { count: 13, note: '技術8名 ＋ LIVE PAINT 5名（デコ班14名は撤収済み）' },
+            { count: 97, note: '97名' },
+          ],
+          totalNote: 'デコ班撤収済みのため公式13名 ｜ ※アーティスト（約20〜35名）を加算すること',
+        },
+      ],
     },
   ];
 
   let row = 4;
 
-  // グループ行
-  groups.forEach(g => {
-    sh.getRange(row, 1, 1, 5).setValues([
-      [g.name, g.counts[0], g.counts[1], g.counts[2], g.note]
-    ]);
-    sh.getRange(row, 1, 1, 5)
-      .setBackground(g.bg).setFontColor(g.fg)
-      .setVerticalAlignment('middle')
-      .setBorder(true,true,true,true,true,true,'#CCCCCC',SpreadsheetApp.BorderStyle.SOLID);
-    sh.getRange(row, 1).setFontWeight('bold').setHorizontalAlignment('left');
-    sh.getRange(row, 2, 1, 3)
-      .setHorizontalAlignment('center').setFontWeight('bold').setFontSize(18);
-    sh.getRange(row, 5).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
-    sh.setRowHeight(row, 52);
+  days.forEach(day => {
+    // 日付バナー
+    sh.getRange(row, 1, 1, 4).merge().setValue(day.label);
+    sh.getRange(row, 1, 1, 4)
+      .setBackground(C.H2_BG).setFontColor(C.GOLD)
+      .setFontWeight('bold').setFontSize(13)
+      .setHorizontalAlignment('center').setVerticalAlignment('middle');
+    sh.setRowHeight(row, 34);
     row++;
+
+    day.slots.forEach(slot => {
+      const startRow = row;
+      const n = slot.data.length;
+
+      // 時刻セル（グループ数分マージ）
+      sh.getRange(startRow, 1, n, 1).merge();
+      sh.getRange(startRow, 1, n, 1)
+        .setValue(slot.time)
+        .setBackground('#1A1A2E').setFontColor('#A0C4FF')
+        .setFontWeight('bold').setFontSize(12)
+        .setHorizontalAlignment('center').setVerticalAlignment('middle')
+        .setWrap(true);
+
+      // グループ行
+      slot.data.forEach((d, i) => {
+        const g = groups[i];
+        sh.getRange(row, 2).setValue(g.name)
+          .setBackground(g.bg).setFontColor(g.fg)
+          .setFontWeight('bold').setHorizontalAlignment('left').setVerticalAlignment('middle');
+        sh.getRange(row, 3).setValue(d.count)
+          .setBackground(g.bg).setFontColor(g.fg)
+          .setFontWeight('bold').setFontSize(16)
+          .setHorizontalAlignment('center').setVerticalAlignment('middle');
+        sh.getRange(row, 4).setValue(d.note)
+          .setBackground(g.bg).setFontColor(g.fg)
+          .setFontSize(9).setHorizontalAlignment('left').setVerticalAlignment('middle').setWrap(true);
+        sh.setRowHeight(row, 40);
+        row++;
+      });
+
+      // 合計行
+      const total = slot.data.reduce((s, d) => s + d.count, 0);
+      sh.getRange(row, 1, 1, 2).merge().setValue('▶ 合計');
+      sh.getRange(row, 1, 1, 2)
+        .setBackground('#0D0D1A').setFontColor(C.GOLD)
+        .setFontWeight('bold').setFontSize(11)
+        .setHorizontalAlignment('center').setVerticalAlignment('middle');
+      sh.getRange(row, 3).setValue(total)
+        .setBackground('#0D0D1A').setFontColor(C.GOLD)
+        .setFontWeight('bold').setFontSize(20)
+        .setHorizontalAlignment('center').setVerticalAlignment('middle');
+      sh.getRange(row, 4).setValue(slot.totalNote)
+        .setBackground('#0D0D1A').setFontColor('#AAAAAA')
+        .setFontSize(9).setHorizontalAlignment('left').setVerticalAlignment('middle').setWrap(true);
+      sh.getRange(row, 1, 1, 4)
+        .setBorder(false,false,true,false,false,false,'#333355',SpreadsheetApp.BorderStyle.SOLID);
+      sh.setRowHeight(row, 44);
+      row++;
+    });
   });
 
-  // 合計行
-  const totals = [0, 1, 2].map(d => groups.reduce((s, g) => s + g.counts[d], 0));
-  sh.getRange(row, 1, 1, 5).setValues([
-    ['合計', totals[0], totals[1], totals[2],
-     '賄い提供食数: 昼×人数 ＋ 18時×人数 ｜ ※アーティスト（約20〜35名）を加算すること']
-  ]);
-  sh.getRange(row, 1, 1, 5)
-    .setBackground('#0D0D1A').setFontColor(C.GOLD)
-    .setFontWeight('bold').setFontSize(13)
-    .setVerticalAlignment('middle')
-    .setBorder(true,true,true,true,false,false,'#C9A84C',SpreadsheetApp.BorderStyle.SOLID_MEDIUM);
-  sh.getRange(row, 1).setHorizontalAlignment('left');
-  sh.getRange(row, 2, 1, 3).setHorizontalAlignment('center').setFontSize(22);
-  sh.getRange(row, 5).setHorizontalAlignment('left').setFontSize(9).setFontWeight('normal');
-  sh.setRowHeight(row, 58);
-  row++;
-
   // アレルギー注意書き
-  sh.getRange(row, 1, 1, 5).merge()
+  sh.getRange(row, 1, 1, 4).merge()
     .setValue('🌱 アレルギー・食事制限: JakoJako / Sibel ベジタリアン ｜ Hybrid Man (Julien) ベジタリアン ｜ ※個別対応要確認');
-  sh.getRange(row, 1, 1, 5).setBackground(C.ALERT_BG).setFontColor(C.ALERT_FG)
+  sh.getRange(row, 1, 1, 4)
+    .setBackground(C.ALERT_BG).setFontColor(C.ALERT_FG)
     .setFontSize(10).setHorizontalAlignment('center').setVerticalAlignment('middle')
-    .setBorder(true,true,true,true,false,false,'#FFD700',SpreadsheetApp.BorderStyle.SOLID);
-  sh.setRowHeight(row, 36);
+    .setBorder(true,true,true,true,false,false,'#FFD700',SpreadsheetApp.BorderStyle.SOLID)
+    .setWrap(true);
+  sh.setRowHeight(row, 44);
 }
 
 // ───────────────────────────────────────────
