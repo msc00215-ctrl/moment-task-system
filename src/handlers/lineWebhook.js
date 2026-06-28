@@ -10,6 +10,9 @@
  */
 const { verifyLineSignature } = require('../middleware/lineSignature');
 const { extractTasks } = require('../services/openaiService');
+const { isQuestion, parseEquipmentRegister, answerQuestion } = require('../services/qaService');
+const { addEquipmentItem } = require('../services/knowledgeService');
+const { extractAndSaveDecision } = require('../services/decisionExtractor');
 const { reply } = require('../services/lineService');
 const { postToGas } = require('../services/gasService');
 const { assertRequired } = require('../config');
@@ -64,13 +67,48 @@ async function handleSingleEvent(event) {
 
   logger.info({ sourceType, groupName, textLen: text.length }, 'メッセージ受信');
 
-  // 1. 全メッセージをリアルタイムログシートに記録
+  // 1. 全メッセージをリアルタイムログシートに記録（+ 決定事項の自動抽出を並行実行）
+  extractAndSaveDecision(text, groupName).catch(err =>
+    logger.warn({ err: err.message }, '決定事項抽出スキップ')
+  );
   postToGas({
     type: 'lineLog',
     messages: [{ timestamp, groupId: groupId || 'direct', groupName, userId, text }],
   }).catch(err => logger.error({ err: err.message }, 'GAS ログ送信失敗'));
 
-  // 2. タスク抽出
+  // 2a. 備品登録コマンド「備品登録: 品名, 場所, 数量」を優先チェック
+  const equipReg = parseEquipmentRegister(text);
+  if (equipReg) {
+    logger.info({ equipReg }, '備品登録コマンド検知');
+    const ok = await addEquipmentItem({
+      category: 'その他',
+      name: equipReg.name,
+      location: equipReg.location,
+      quantity: equipReg.quantity,
+      assignee: equipReg.assignee,
+      status: '📝未確認',
+      notes: equipReg.notes,
+    });
+    if (replyToken) {
+      const msg = ok
+        ? `✅ 📦備品DB に追加したよ！\n・品名: ${equipReg.name}\n・場所: ${equipReg.location}\n・数量: ${equipReg.quantity}`
+        : '❌ 備品DBへの追加に失敗しました。スプシを直接確認してください。';
+      await safeReply(replyToken, userId, msg);
+    }
+    return;
+  }
+
+  // 2b. 質問メッセージ → スプシ全体を参照して回答
+  if (isQuestion(text)) {
+    logger.info({ textLen: text.length }, '質問メッセージ検知 → Q&Aモード');
+    const answer = await answerQuestion(text);
+    if (answer && replyToken) {
+      await safeReply(replyToken, userId, answer);
+    }
+    return;
+  }
+
+  // 2c. タスク抽出（従来フロー）
   let tasks;
   try {
     tasks = await extractTasks(text);

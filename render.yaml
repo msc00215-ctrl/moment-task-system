@@ -19,3 +19,7 @@ services:
         sync: false
       - key: GAS_SECRET_TOKEN
         sync: false
+      - key: SPREADSHEET_ID
+        value: 1Drp8iWZ1n2YZRid3FqLnH1hzj_Ap5LQd46ZqKauucTY
+      - key: GOOGLE_APPLICATION_CREDENTIALS
+        sync: false
