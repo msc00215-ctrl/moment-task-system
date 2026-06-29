@@ -85,7 +85,7 @@ async function answerQuestion(question, senderName = '') {
     const knowledge = await getKnowledgeContext();
     const client = await getClient();
 
-    const systemPrompt = QA_SYSTEM_PROMPT.replace('{KNOWLEDGE}', knowledge.slice(0, 12000)); // トークン制限
+    const systemPrompt = QA_SYSTEM_PROMPT.replace('{KNOWLEDGE}', knowledge.slice(0, 24000)); // トークン制限
 
     const completion = await withRetry(
       () => client.chat.completions.create({
