@@ -1,97 +1,131 @@
 /**
  * Knowledge Service
- * 工程表スプシの全シートを読み込み、Q&A用のテキストコンテキストを構築する
- * - 5分キャッシュ（頻繁な API 呼び出しを防止）
- * - 優先シートを先に読み、合計トークン数を抑制
+ * 質問内容に応じて関連シートを丸ごと読み込んでコンテキストを構築する。
+ * - 全シート一括読み込みではなく「質問→関連シート特定→フル読み込み」方式
+ * - 関連シートが特定できない場合は 📚 確定知識ベース を全行読む
  */
 const { getSheetsClient } = require('../utils/googleAuth');
 const { logger } = require('../utils/logger');
 
 const SS_MAIN = process.env.SPREADSHEET_ID || '1Drp8iWZ1n2YZRid3FqLnH1hzj_Ap5LQd46ZqKauucTY';
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5分
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
-// 優先して読む重要シート（小さくて重要なものを先頭に）
-const PRIORITY_SHEETS = [
-  '🏠 コテージ割り',          // 12行・小さい・よく聞かれる
-  '🎵 ゲート・音楽時間',       // 6行・小さい
-  '🎟️ リストバンド・証明書',   // 5行・小さい
-  '👶 キッズエリア',           // 8行・小さい
-  '🍽️ 賄い 食数管理',         // 27行
-  '📦 備品・資材DB',
-  '📚 確定知識ベース',
-  '🛍️ 出店リスト',
-  '👥 ボランティア名簿',
-  '🎤 アーティスト管理',
-  '🟢 MOMENT設営 工程表',
-  '📋 全体スケジュール',
-  '📱 LINEリアルタイム',
+// キーワード → 読むべきシート のマッピング
+const SHEET_KEYWORD_MAP = [
+  {
+    keywords: ['コテージ', 'cottage', '号室', '棟', '宿泊', '部屋割'],
+    sheets: ['🏠 コテージ割り'],
+  },
+  {
+    keywords: ['ゲート', '音楽', '開場', '閉場', '音スタート', '音エンド', 'アルコール禁止'],
+    sheets: ['🎵 ゲート・音楽時間'],
+  },
+  {
+    keywords: ['キッズ', '子供', '子ども', '託児', '保育', 'kids'],
+    sheets: ['👶 キッズエリア'],
+  },
+  {
+    keywords: ['リストバンド', 'wristband', '腕輪', '証明書', '関係者'],
+    sheets: ['🎟️ リストバンド・証明書'],
+  },
+  {
+    keywords: ['賄い', '食事', '昼食', '夕食', '朝食', '食数', '弁当', '飯'],
+    sheets: ['🍽️ 賄い 食数管理'],
+  },
+  {
+    keywords: ['備品', '資材', '道具', '機材', 'ケーブル', 'テーブル', '椅子'],
+    sheets: ['📦 備品・資材DB'],
+  },
+  {
+    keywords: ['出店', 'shop', 'ショップ', '店舗', '搬入', '出展', '露店'],
+    sheets: ['🛍️ 出店リスト'],
+  },
+  {
+    keywords: ['ボランティア', 'volunteer', '名簿', '在場', '人数'],
+    sheets: ['👥 ボランティア名簿'],
+  },
+  {
+    keywords: ['アーティスト', 'artist', 'DJ', '出演', 'performer', 'ライブ'],
+    sheets: ['🎤 アーティスト管理'],
+  },
+  {
+    keywords: ['工程', '設営', '撤収', '日程', 'スケジュール', '段取り'],
+    sheets: ['🟢 MOMENT設営 工程表', '📋 全体スケジュール'],
+  },
+  {
+    keywords: ['スタッフ', '担当', '入り時間', '到着', '連絡先'],
+    sheets: ['👥 ボランティア名簿', '📋 全体スケジュール'],
+  },
 ];
 
-// 除外シート（大量データ・機密・不要）
-const SKIP_SHEETS = [
+// 除外シート
+const SKIP_SHEETS = new Set([
   '📊 タスク連携', '✅ 完了タスク', '👤 スタッフ管理表',
   '🧑‍🤝‍🧑 ボランティア配置', '📋 タスク（現役）',
-];
+]);
 
-// 各シートの最大読み取り行数（トークン節約）
-const MAX_ROWS_PER_SHEET = 60;
+// シートごとのキャッシュ（シート名 → {text, time}）
+const sheetCache = new Map();
 
-let cache = null;
-let cacheTime = 0;
-
-/**
- * 全シートの内容をテキスト形式で返す（キャッシュ付き）
- * @returns {Promise<string>} Q&Aコンテキスト文字列
- */
-async function getKnowledgeContext() {
-  const now = Date.now();
-  if (cache && (now - cacheTime) < CACHE_TTL_MS) {
-    return cache;
-  }
+async function readSheet(sheets, title, maxRows = 500) {
+  const cached = sheetCache.get(title);
+  if (cached && (Date.now() - cached.time) < CACHE_TTL_MS) return cached.text;
 
   try {
-    const sheets = await getSheetsClient();
-    const meta = await sheets.spreadsheets.get({ spreadsheetId: SS_MAIN });
-    const allTitles = meta.data.sheets.map(s => s.properties.title);
-
-    // 優先シートを先に、その後残りのシート（SKIP以外）
-    const skipSet = new Set(SKIP_SHEETS);
-    const prioritySet = new Set(PRIORITY_SHEETS);
-    const ordered = [
-      ...PRIORITY_SHEETS.filter(t => allTitles.includes(t)),
-      ...allTitles.filter(t => !prioritySet.has(t) && !skipSet.has(t)),
-    ];
-
-    const sections = [];
-    let totalRows = 0;
-
-    for (const title of ordered) {
-      if (totalRows > 800) break; // 合計行数上限
-      try {
-        const r = await sheets.spreadsheets.values.get({
-          spreadsheetId: SS_MAIN,
-          range: `'${title}'!A1:J${MAX_ROWS_PER_SHEET}`,
-          valueRenderOption: 'FORMATTED_VALUE',
-        });
-        const rows = (r.data.values || []).filter(row => row.some(c => c && String(c).trim()));
-        if (rows.length === 0) continue;
-
-        const rowTexts = rows.map(row => row.join(' | '));
-        sections.push(`【${title}】\n${rowTexts.join('\n')}`);
-        totalRows += rows.length;
-      } catch (e) {
-        logger.warn({ title, err: e.message }, 'シート読み取りスキップ');
-      }
-    }
-
-    cache = sections.join('\n\n');
-    cacheTime = now;
-    logger.info({ sheets: sections.length, rows: totalRows }, 'ナレッジキャッシュ更新完了');
-    return cache;
-  } catch (err) {
-    logger.error({ err: err.message }, 'ナレッジ取得失敗');
-    return cache || '（スプレッドシートの読み込みに失敗しました）';
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SS_MAIN,
+      range: `'${title}'!A1:J${maxRows}`,
+      valueRenderOption: 'FORMATTED_VALUE',
+    });
+    const rows = (r.data.values || []).filter(row => row.some(c => c && String(c).trim()));
+    const text = rows.length > 0 ? `【${title}】\n${rows.map(row => row.join(' | ')).join('\n')}` : '';
+    sheetCache.set(title, { text, time: Date.now() });
+    return text;
+  } catch (e) {
+    logger.warn({ title, err: e.message }, 'シート読み取りスキップ');
+    return '';
   }
+}
+
+/**
+ * 質問に応じた関連シートを丸ごと読んでコンテキストを返す
+ * @param {string} question - ユーザーの質問文
+ * @returns {Promise<string>}
+ */
+async function getRelevantContext(question) {
+  const sheets = await getSheetsClient();
+  const q = question || '';
+
+  // キーワードマッチで関連シートを特定
+  const matched = new Set();
+  for (const { keywords, sheets: targets } of SHEET_KEYWORD_MAP) {
+    if (keywords.some(kw => q.includes(kw))) {
+      targets.forEach(t => matched.add(t));
+    }
+  }
+
+  // マッチしたシートを読む（全行）
+  const sections = [];
+  if (matched.size > 0) {
+    for (const title of matched) {
+      const text = await readSheet(sheets, title, 500);
+      if (text) sections.push(text);
+    }
+    logger.info({ matched: [...matched] }, 'Q&A: キーワードマッチシート読み込み');
+  }
+
+  // 確定知識ベースは常に追加（最大200行）
+  const kbText = await readSheet(sheets, '📚 確定知識ベース', 200);
+  if (kbText) sections.push(kbText);
+
+  return sections.join('\n\n');
+}
+
+/**
+ * 後方互換: 全体コンテキスト（備品登録等で使用）
+ */
+async function getKnowledgeContext() {
+  return getRelevantContext('');
 }
 
 /**
@@ -116,9 +150,7 @@ async function addEquipmentItem({ category, name, location, quantity, assignee, 
       insertDataOption: 'INSERT_ROWS',
       requestBody: { values: [row] },
     });
-    // キャッシュを無効化（新データを反映させるため）
-    cache = null;
-    cacheTime = 0;
+    sheetCache.delete('📦 備品・資材DB');
     logger.info({ name, location }, '備品DB に追加完了');
     return true;
   } catch (err) {
@@ -127,12 +159,8 @@ async function addEquipmentItem({ category, name, location, quantity, assignee, 
   }
 }
 
-/**
- * キャッシュを強制リフレッシュ
- */
 function invalidateCache() {
-  cache = null;
-  cacheTime = 0;
+  sheetCache.clear();
 }
 
-module.exports = { getKnowledgeContext, addEquipmentItem, invalidateCache };
+module.exports = { getKnowledgeContext, getRelevantContext, addEquipmentItem, invalidateCache };

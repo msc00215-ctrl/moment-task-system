@@ -10,7 +10,7 @@ const OpenAI = require('openai');
 const { credentials } = require('../config');
 const { withRetry } = require('../utils/retry');
 const { logger } = require('../utils/logger');
-const { getKnowledgeContext, addEquipmentItem } = require('./knowledgeService');
+const { getKnowledgeContext, getRelevantContext, addEquipmentItem } = require('./knowledgeService');
 
 let cachedClient;
 
@@ -82,10 +82,10 @@ const QA_SYSTEM_PROMPT = `あなたはMOMENT 2026（奈良・洞川キャンプ�
  */
 async function answerQuestion(question, senderName = '') {
   try {
-    const knowledge = await getKnowledgeContext();
+    const knowledge = await getRelevantContext(question);
     const client = await getClient();
 
-    const systemPrompt = QA_SYSTEM_PROMPT.replace('{KNOWLEDGE}', knowledge.slice(0, 24000)); // トークン制限
+    const systemPrompt = QA_SYSTEM_PROMPT.replace('{KNOWLEDGE}', knowledge);
 
     const completion = await withRetry(
       () => client.chat.completions.create({
