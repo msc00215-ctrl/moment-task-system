@@ -15,7 +15,7 @@
  */
 
 const OpenAI = require('openai');
-const { google } = require('googleapis');
+const { getSheetsClient } = require('../utils/googleAuth');
 const { credentials } = require('../config');
 const { withRetry } = require('../utils/retry');
 const { logger } = require('../utils/logger');
@@ -70,10 +70,7 @@ async function getOpenAI() {
 let sheetsClient;
 async function getSheets() {
   if (sheetsClient) return sheetsClient;
-  const auth = new google.auth.GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-  sheetsClient = google.sheets({ version: 'v4', auth: await auth.getClient() });
+  sheetsClient = await getSheetsClient();
   return sheetsClient;
 }
 

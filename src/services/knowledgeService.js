@@ -4,7 +4,7 @@
  * - 5分キャッシュ（頻繁な API 呼び出しを防止）
  * - 優先シートを先に読み、合計トークン数を抑制
  */
-const { google } = require('googleapis');
+const { getSheetsClient } = require('../utils/googleAuth');
 const { logger } = require('../utils/logger');
 
 const SS_MAIN = process.env.SPREADSHEET_ID || '1Drp8iWZ1n2YZRid3FqLnH1hzj_Ap5LQd46ZqKauucTY';
@@ -38,16 +38,6 @@ const MAX_ROWS_PER_SHEET = 60;
 
 let cache = null;
 let cacheTime = 0;
-let sheetsClient = null;
-
-async function getSheetsClient() {
-  if (sheetsClient) return sheetsClient;
-  const auth = new google.auth.GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-  sheetsClient = google.sheets({ version: 'v4', auth: await auth.getClient() });
-  return sheetsClient;
-}
 
 /**
  * 全シートの内容をテキスト形式で返す（キャッシュ付き）

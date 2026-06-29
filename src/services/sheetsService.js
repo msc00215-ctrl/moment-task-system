@@ -10,7 +10,7 @@
  * - 書き込み回数を最小化 (batchUpdate / append を 1 リクエストで)
  * - Read もキャッシュ層で減らす (User / Area マスタは滅多に変わらない)
  */
-const { google } = require('googleapis');
+const { getSheetsClient: _getSheetsClient } = require('../utils/googleAuth');
 const { env } = require('../config');
 const { withRetry } = require('../utils/retry');
 
@@ -18,10 +18,7 @@ let cachedSheets;
 
 async function getSheetsClient() {
   if (cachedSheets) return cachedSheets;
-  const auth = new google.auth.GoogleAuth({
-    scopes: ['https://www.googleapis.com/auth/spreadsheets'],
-  });
-  cachedSheets = google.sheets({ version: 'v4', auth: await auth.getClient() });
+  cachedSheets = await _getSheetsClient();
   return cachedSheets;
 }
 
