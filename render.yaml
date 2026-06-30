@@ -3,6 +3,7 @@ services:
     name: moment-line-bot
     env: node
     plan: starter
+    rootDir: .
     buildCommand: npm install
     startCommand: node src/index.js
     healthCheckPath: /health
