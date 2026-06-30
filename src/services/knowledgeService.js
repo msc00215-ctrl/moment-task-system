@@ -48,6 +48,11 @@ const SHEET_KEYWORD_MAP = [
     keywords: ['スタッフ', '担当', '入り時間', '到着'],
     sheets: ['👥 ボランティア名簿', '📋 全体スケジュール'],
   },
+  {
+    // 人物・ニックネーム同一性の質問（「南ちゃんと南城君は同一人物？」など）
+    keywords: ['同一人物', '同じ人', 'って誰', 'と同じ人', '本人', '誰ですか', '誰？'],
+    sheets: ['👥 ボランティア名簿'],
+  },
 ];
 
 // コアスタッフ専用キーワードマップ（機密シートを含む全シート）
@@ -115,12 +120,46 @@ async function readMatchedSheets(sheets, question, keywordMap) {
 }
 
 /**
+ * 📚 確定知識ベース を末尾200行から読む（最新の情報を優先）
+ * 先頭200行だと3000行あるシートの最新エントリが漏れるため末尾読みに変更
+ */
+async function readKnowledgeBase(sheets) {
+  const TITLE = '📚 確定知識ベース';
+  const cached = sheetCache.get(TITLE);
+  if (cached && (Date.now() - cached.time) < CACHE_TTL_MS) return cached.text;
+  try {
+    const countRes = await sheets.spreadsheets.values.get({
+      spreadsheetId: SS_MAIN,
+      range: `'${TITLE}'!A:A`,
+    });
+    const totalRows = (countRes.data.values || []).length;
+    if (totalRows === 0) {
+      sheetCache.set(TITLE, { text: '', time: Date.now() });
+      return '';
+    }
+    const startRow = Math.max(1, totalRows - 199);
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SS_MAIN,
+      range: `'${TITLE}'!A${startRow}:E${totalRows}`,
+      valueRenderOption: 'FORMATTED_VALUE',
+    });
+    const rows = (r.data.values || []).filter(row => row.some(c => c && String(c).trim()));
+    const text = rows.length > 0 ? `【${TITLE}】\n${rows.map(row => row.join(' | ')).join('\n')}` : '';
+    sheetCache.set(TITLE, { text, time: Date.now() });
+    return text;
+  } catch (e) {
+    logger.warn({ err: e.message }, 'KB読み取りスキップ');
+    return '';
+  }
+}
+
+/**
  * 通常ジュニア用コンテキスト（機密シート除外）
  */
 async function getRelevantContext(question) {
   const sheets = await getSheetsClient();
   const sections = await readMatchedSheets(sheets, question, SHEET_KEYWORD_MAP);
-  const kbText = await readSheet(sheets, '📚 確定知識ベース', 200);
+  const kbText = await readKnowledgeBase(sheets);
   if (kbText) sections.push(kbText);
   return sections.join('\n\n');
 }
@@ -131,7 +170,7 @@ async function getRelevantContext(question) {
 async function getCoreContext(question) {
   const sheets = await getSheetsClient();
   const sections = await readMatchedSheets(sheets, question, CORE_SHEET_KEYWORD_MAP);
-  const kbText = await readSheet(sheets, '📚 確定知識ベース', 200);
+  const kbText = await readKnowledgeBase(sheets);
   if (kbText) sections.push(kbText);
   return sections.join('\n\n');
 }
