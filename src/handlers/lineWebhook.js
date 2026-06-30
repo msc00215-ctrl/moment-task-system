@@ -21,7 +21,7 @@
 const { verifyLineSignature } = require('../middleware/lineSignature');
 const { extractTasks } = require('../services/openaiService');
 const { isQuestion, parseEquipmentRegister, answerQuestion, answerQuestionCore } = require('../services/qaService');
-const { addEquipmentItem } = require('../services/knowledgeService');
+const { addEquipmentItem, saveManualKnowledgeEntry } = require('../services/knowledgeService');
 const { extractAndSaveDecision, isDecisionMessage } = require('../services/decisionExtractor');
 const { reply } = require('../services/lineService');
 const { postToGas } = require('../services/gasService');
@@ -48,6 +48,36 @@ function isCalledByName(text) {
 // 「ジュニア、」プレフィックスを除いた本文を返す
 function stripPrefix(text) {
   return text.replace(/^ジュニア[、,，\s！!]*/, '').trim();
+}
+
+// 手動記録コマンド検出（「記録して」を含む）
+function isRecordCommand(text) {
+  return text.includes('記録して') || text.includes('覚えといて') || text.includes('メモして');
+}
+
+// 記録内容を抽出（必要事項チェック付き）
+// 返り値: { content: string } | { missing: string }
+function parseRecordCommand(text) {
+  let content = null;
+
+  // パターン1: 「〇〇を記録して」「〇〇って記録して」「〇〇は記録して」
+  let m = text.match(/^(.+?)(?:を|って|は)(?:記録して|覚えといて|メモして)/);
+  if (m) content = m[1].trim();
+
+  // パターン2: 「記録して。〇〇」「記録して：〇〇」「記録して\n〇〇」
+  if (!content) {
+    m = text.match(/(?:記録して|覚えといて|メモして)[。\n：:、]\s*(.+)/s);
+    if (m) content = m[1].trim();
+  }
+
+  // パターン3: コマンドのみで内容なし
+  if (!content || content.length < 5) {
+    return {
+      missing: '📝 記録したい内容が分からなかったよ！\n\n以下の形式で送ってね：\n\n【例1】\nジュニア、〇〇を記録して\n\n【例2】\nジュニア、記録して。\n〇〇（記録したい内容）\n\n何を記録する？',
+    };
+  }
+
+  return { content };
 }
 
 // 自然言語の備品登録を解析「テント（10張）はBエリアに置いてあるよ」
@@ -182,7 +212,23 @@ async function handleSingleEvent(event) {
   // 「ジュニア、」を除いた本文で処理
   const body = isDM ? text : stripPrefix(text);
 
-  // 1. 備品登録（コマンド形式）「備品登録: テント, Bエリア, 10張」
+  // 1. 手動記録コマンド「〇〇を記録して」「記録して。〇〇」
+  if (isRecordCommand(body)) {
+    const parsed = parseRecordCommand(body);
+    if (parsed.missing) {
+      await safeReply(replyToken, userId, parsed.missing);
+      return;
+    }
+    const result = await saveManualKnowledgeEntry(parsed.content);
+    await safeReply(replyToken, userId,
+      result.ok
+        ? `承知しました。📚\n「${parsed.content.slice(0, 60)}${parsed.content.length > 60 ? '…' : ''}」\nを確定知識ベースに記録したよ！\nカテゴリ: ${result.category}`
+        : '❌ 記録に失敗したよ。もう一度試してみて！'
+    );
+    return;
+  }
+
+  // 3. 備品登録（コマンド形式）「備品登録: テント, Bエリア, 10張」
   const equipCmd = parseEquipmentRegister(body);
   if (equipCmd) {
     const ok = await addEquipmentItem({
@@ -202,7 +248,7 @@ async function handleSingleEvent(event) {
     return;
   }
 
-  // 2. 備品登録（自然言語）「テント（10張）はBエリアに置いてあるよ」
+  // 4. 備品登録（自然言語）「テント（10張）はBエリアに置いてあるよ」
   if (body.includes('あるよ') || body.includes('置いてある') || body.includes('保管')) {
     const equipNat = parseEquipmentNatural(body);
     if (equipNat && equipNat.name && equipNat.location) {
@@ -223,7 +269,7 @@ async function handleSingleEvent(event) {
     }
   }
 
-  // 3. Q&A（質問に回答）
+  // 5. Q&A（質問に回答）
   if (isQuestion(body) || isDM) {
     logger.info({ textLen: body.length }, '質問メッセージ → Q&Aモード');
     const answer = await answerQuestion(body);
@@ -233,7 +279,7 @@ async function handleSingleEvent(event) {
     return;
   }
 
-  // 4. 確定情報の登録（「〇〇に決まったよ」系）→ 確認返答
+  // 6. 確定情報の登録（「〇〇に決まったよ」系）→ 確認返答
   if (isDecisionMessage(body)) {
     // extractAndSaveDecision はステルス処理で既に実行済み
     // ジュニアに直接言った場合は「覚えたよ」と返す

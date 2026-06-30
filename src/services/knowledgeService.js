@@ -217,4 +217,46 @@ function invalidateCache() {
   sheetCache.clear();
 }
 
-module.exports = { getKnowledgeContext, getRelevantContext, getCoreContext, addEquipmentItem, invalidateCache };
+// 手動記録コマンド用カテゴリ自動判定
+function detectRecordCategory(text) {
+  const maps = [
+    { kws: ['時間', '時刻', '開始', '終了', 'スタート', 'ゲート', 'オープン'], cat: 'タイムスケジュール' },
+    { kws: ['場所', 'エリア', '会場', '倉庫', 'テント', '配置'], cat: '場所・配置' },
+    { kws: ['スタッフ', 'ボランティア', '担当', '人数'], cat: 'スタッフ・人数' },
+    { kws: ['備品', '資材', '機材', '道具', 'ケーブル'], cat: '備品・資材' },
+    { kws: ['食事', '賄い', '食数', '弁当', '昼食', '夕食'], cat: '賄い・食事' },
+    { kws: ['出店', 'ショップ', '店舗', '搬入'], cat: '出店' },
+    { kws: ['ルール', '禁止', '注意', '持ち込み'], cat: 'ルール・注意事項' },
+    { kws: ['天気', '雨', '台風', '中止', '延期'], cat: '天気・中止条件' },
+  ];
+  for (const { kws, cat } of maps) {
+    if (kws.some(kw => text.includes(kw))) return cat;
+  }
+  return 'スタッフ記録';
+}
+
+/**
+ * 手動記録コマンドで確定知識ベースに保存
+ */
+async function saveManualKnowledgeEntry(content) {
+  try {
+    const sheets = await getSheetsClient();
+    const today = new Date().toISOString().split('T')[0];
+    const category = detectRecordCategory(content);
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SS_MAIN,
+      range: "'📚 確定知識ベース'!A:E",
+      valueInputOption: 'USER_ENTERED',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [[today, category, content, 'LINE手動記録', '']] },
+    });
+    sheetCache.delete('📚 確定知識ベース');
+    logger.info({ content: content.slice(0, 50), category }, '手動記録: 確定知識ベースに追記');
+    return { ok: true, category };
+  } catch (err) {
+    logger.error({ err: err.message }, '手動記録失敗');
+    return { ok: false };
+  }
+}
+
+module.exports = { getKnowledgeContext, getRelevantContext, getCoreContext, addEquipmentItem, invalidateCache, saveManualKnowledgeEntry };
