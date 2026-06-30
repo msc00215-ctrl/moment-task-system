@@ -2,71 +2,56 @@
  * LINE Webhook ハンドラ
  *
  * 動作フロー:
- * 1. 全メッセージ → ログ記録 + タスク自動抽出（無言）
- * 2. DM: 常にジュニアが返答 / グループ: 「ジュニア」と呼ばれた時だけ返答
- *    - 備品情報を教えてもらった → シートに保存して確認返信
- *    - 質問 → スタッフ/備品/スケジュール情報をもとに回答
- * 3. join イベント: グループ参加時に自己紹介 + 取説をピン止め
+ * ┌─ 全メッセージ（グループ・DM共通）─────────────────┐
+ * │  ・リアルタイムログ記録（GASシート）               │
+ * │  ・決定事項の自動抽出 → 確定知識ベースへ（silent） │
+ * │  ・タスク自動抽出 → スプシへ（ステルス・返答なし） │
+ * └──────────────────────────────────────────────────┘
+ *
+ * ┌─ 返答するのは以下の場合のみ ──────────────────────┐
+ * │  【グループ】「ジュニア」と呼びかけた時だけ返答   │
+ * │  【DM】     全メッセージに返答                    │
+ * └──────────────────────────────────────────────────┘
+ *
+ * 返答の優先順位:
+ *  1. 備品登録（コマンド or 自然言語）
+ *  2. Q&A（質問に回答）
+ *  3. 確定情報登録（「〇〇に決まったよ」系）→「覚えたよ！」と返す
  */
 const { verifyLineSignature } = require('../middleware/lineSignature');
-const { extractTasks, generateJuniorResponse, extractEquipmentInfo, extractKnowledge } = require('../services/openaiService');
-const { reply, pushMessages, pinMessage } = require('../services/lineService');
-const { postToGas, getSheetData } = require('../services/gasService');
-
-const INTRO_SHORT = `はじめまして！ジュニアです🌟
-MOMENT 2026 の設営・運営をサポートするAIアシスタントやで！
-
-【基本の使い方】
-・「ジュニア、〇〇は？」と呼びかけると答えるで！
-・スプシの情報を自動で学習して成長するんや📈
-・タスクの管理もこっそり手伝ってるよ😊
-
-詳しい使い方は↓の取説を見てな！`;
-
-const INTRO_MANUAL = `📖 ジュニア 取扱説明書（フルバージョン）
-
-━━━━━━━━━━━━━━━━━━
-🔰 基本コマンド
-━━━━━━━━━━━━━━━━━━
-「ジュニア、〇〇は？」→ 質問に答えるで
-「ジュニア、〇〇はXXに決まったよ」→ 確定情報を覚えるで
-「ジュニア、備品〇〇はBエリアにあるよ」→ 備品場所を記録するで
-
-━━━━━━━━━━━━━━━━━━
-📋 タスク管理（ステルス機能）
-━━━━━━━━━━━━━━━━━━
-グループのトーク内容から自動でタスクを抽出してスプシに登録するで（返答なし・バレない）
-→ スプシ「📋 タスク（現役）」シートで確認できるで
-
-━━━━━━━━━━━━━━━━━━
-📚 自動成長（知識ベース）
-━━━━━━━━━━━━━━━━━━
-「〇〇は△△に確定」「〇〇は××でOK」などの決定事項を自動で学習するで
-→ スプシ「📚 確定知識ベース」シートで蓄積内容を確認できるで
-
-━━━━━━━━━━━━━━━━━━
-📦 備品・資材管理
-━━━━━━━━━━━━━━━━━━
-「ジュニア、テント（10張）はBエリアに置いてあるよ」のように教えると記録するで
-→ スプシ「📦 備品・資材」シートで確認できるで
-
-━━━━━━━━━━━━━━━━━━
-👥 スタッフ情報
-━━━━━━━━━━━━━━━━━━
-スタッフの名前・配属チームなどを答えられるで
-※個人の連絡先・財務情報は答えられないよ（セキュリティ上）
-
-━━━━━━━━━━━━━━━━━━
-⚠️ 注意事項
-━━━━━━━━━━━━━━━━━━
-・グループでは「ジュニア」と呼びかけた時だけ返答するで
-・公式アカウントへのDMはいつでも話しかけてOK！
-・スプシを育てるほどジュニアが賢くなるで📈
-
-スプシ管理はHI-Cさんに確認してな🙏`;
+const { extractTasks } = require('../services/openaiService');
+const { isQuestion, parseEquipmentRegister, answerQuestion } = require('../services/qaService');
+const { addEquipmentItem } = require('../services/knowledgeService');
+const { extractAndSaveDecision, isDecisionMessage } = require('../services/decisionExtractor');
+const { reply } = require('../services/lineService');
+const { postToGas } = require('../services/gasService');
 const { assertRequired } = require('../config');
 const { logger } = require('../utils/logger');
 const { maskPII, checkRateLimit, isJuniorMention } = require('../utils/security');
+
+// 「ジュニア」と呼びかけているか（グループでの返答トリガー）
+function isCalledByName(text) {
+  return /ジュニア[、,，\s！!]?/.test(text) || text.startsWith('ジュニア');
+}
+
+// 「ジュニア、」プレフィックスを除いた本文を返す
+function stripPrefix(text) {
+  return text.replace(/^ジュニア[、,，\s！!]*/, '').trim();
+}
+
+// 自然言語の備品登録を解析「テント（10張）はBエリアに置いてあるよ」
+function parseEquipmentNatural(text) {
+  // 「備品〇〇はXXに」「〇〇（XX個）はYYに」形式
+  const m = text.match(/^(?:備品)?(.+?)(?:（(.+?)）)?\s*[はが]?\s*(.+?)[にへ](?:置いてある|あるよ|置いてあるよ|保管|あります)?/);
+  if (!m) return null;
+  return {
+    name: m[1].trim(),
+    quantity: m[2] || '',
+    location: m[3].trim(),
+    assignee: '',
+    notes: '',
+  };
+}
 
 const groupNameCache = new Map();
 
@@ -133,114 +118,106 @@ async function handleSingleEvent(event) {
   if (!text) return;
 
   const replyToken = event.replyToken;
-  const userId     = event.source?.userId || 'unknown';
-  const sourceType = event.source?.type   || 'unknown';
-  const groupId    = event.source?.groupId || event.source?.roomId || null;
-  const timestamp  = new Date(event.timestamp || Date.now()).toISOString();
-  const groupName  = groupId ? await fetchGroupName(groupId) : 'DM';
+  const userId = event.source?.userId || 'unknown';
+  const sourceType = event.source?.type || 'unknown'; // 'user' | 'group' | 'room'
+  const groupId = event.source?.groupId || event.source?.roomId || null;
+  const isDM = sourceType === 'user';
+  const timestamp = new Date(event.timestamp || Date.now()).toISOString();
+  const groupName = groupId ? await fetchGroupName(groupId) : 'DM';
 
   logger.info({ sourceType, groupName, textLen: text.length }, 'メッセージ受信');
 
-  // ① レート制限
-  if (!checkRateLimit(userId)) {
-    logger.warn({ userId }, 'レート制限超過');
-    return;
-  }
+  // ── ステルス処理（全メッセージ・返答なし）──────────────────────
+  // 決定事項の自動抽出 → 確定知識ベースへ
+  extractAndSaveDecision(text, groupName).catch(err =>
+    logger.warn({ err: err.message }, '決定事項抽出スキップ')
+  );
 
-  // ② 全メッセージをログ保存（PII マスク済み）
-  const maskedText = maskPII(text);
+  // リアルタイムログ記録
   postToGas({
     type: 'lineLog',
-    messages: [{ timestamp, groupId: groupId || 'direct', groupName, userId, text: maskedText }],
+    messages: [{ timestamp, groupId: groupId || 'direct', groupName, userId, text }],
   }).catch(err => logger.error({ err: err.message }, 'GAS ログ送信失敗'));
 
-  // ③ タスク抽出（常に・無言）
-  let tasks;
-  try {
-    tasks = await extractTasks(text, groupName);
-  } catch (err) {
-    logger.error({ err: err.message }, 'extractTasks 失敗');
-  }
-
-  if (tasks && tasks.length > 0) {
-    postToGas({
+  // タスク自動抽出 → スプシへ（返答なし・ステルス）
+  extractTasks(text).then(tasks => {
+    if (!tasks || tasks.length === 0) return;
+    return postToGas({
       type: 'task',
       groupName,
       groupId: groupId || 'direct',
       userId,
-      originalText: maskedText,
+      originalText: text,
       timestamp,
       tasks,
-    }).catch(err => logger.error({ err: err.message }, 'GAS タスク送信失敗'));
+    });
+  }).catch(err => logger.warn({ err: err.message }, 'タスク抽出スキップ'));
+
+  // ── 返答処理 ──────────────────────────────────────────────────
+  // グループ: 「ジュニア」呼びかけ時のみ / DM: 常時
+  const called = isDM || isCalledByName(text);
+  if (!called || !replyToken) return;
+
+  // 「ジュニア、」を除いた本文で処理
+  const body = isDM ? text : stripPrefix(text);
+
+  // 1. 備品登録（コマンド形式）「備品登録: テント, Bエリア, 10張」
+  const equipCmd = parseEquipmentRegister(body);
+  if (equipCmd) {
+    const ok = await addEquipmentItem({
+      category: 'その他',
+      name: equipCmd.name,
+      location: equipCmd.location,
+      quantity: equipCmd.quantity,
+      assignee: equipCmd.assignee,
+      status: '📝未確認',
+      notes: equipCmd.notes,
+    });
+    await safeReply(replyToken, userId,
+      ok
+        ? `✅ 📦備品DB に追加したよ！\n・品名: ${equipCmd.name}\n・場所: ${equipCmd.location}\n・数量: ${equipCmd.quantity}`
+        : '❌ 備品DBへの追加に失敗。スプシを直接確認してね。'
+    );
+    return;
   }
 
-  // ③b 確定知識抽出（常に・無言・ステルス — fire-and-forget）
-  extractKnowledge(text).then(info => {
-    if (info?.found && info.content) {
-      return postToGas({
-        type:         'knowledge',
-        category:     info.category    || 'その他',
-        content:      info.content,
-        notes:        info.notes       || '',
-        groupName,
-        originalText: maskedText,
+  // 2. 備品登録（自然言語）「テント（10張）はBエリアに置いてあるよ」
+  if (body.includes('あるよ') || body.includes('置いてある') || body.includes('保管')) {
+    const equipNat = parseEquipmentNatural(body);
+    if (equipNat && equipNat.name && equipNat.location) {
+      const ok = await addEquipmentItem({
+        category: 'その他',
+        name: equipNat.name,
+        location: equipNat.location,
+        quantity: equipNat.quantity,
+        status: '📝未確認',
+        notes: equipNat.notes,
       });
+      if (ok) {
+        await safeReply(replyToken, userId,
+          `✅ 📦備品DB に記録したよ！\n・${equipNat.name}　${equipNat.quantity ? '（' + equipNat.quantity + '）' : ''}\n・場所: ${equipNat.location}`
+        );
+        return;
+      }
     }
-  }).catch(err => logger.error({ err: err.message }, 'GAS 知識登録失敗'));
+  }
 
-  // ④ DM は常に返答 / グループ・ルームは「ジュニア」メンション必須
-  const isDM = sourceType === 'user';
-  if (!isDM && !isJuniorMention(text)) return;
-  if (!replyToken) return;
-
-  // ⑤ リストアコマンド: 「現状の状態に戻れるように！！！」でスプシ再構築
-  if (text.includes('現状の状態に戻れるように！！！')) {
-    postToGas({ type: 'restore' })
-      .catch(err => logger.error({ err: err.message }, 'GAS restore 送信失敗'));
-    await safeReply(replyToken, userId,
-      '⏳ ②スプシの再構築を開始したで！\n完了まで30〜60秒かかるかも。\n終わったらスプシを確認してみてな！\n\nhttps://docs.google.com/spreadsheets/d/1kPCg1fbYfRxrWs7VwALrLAOo4oqONGgLAn3grhYvUfQ/edit');
+  // 3. Q&A（質問に回答）
+  if (isQuestion(body) || isDM) {
+    logger.info({ textLen: body.length }, '質問メッセージ → Q&Aモード');
+    const answer = await answerQuestion(body);
+    if (answer) {
+      await safeReply(replyToken, userId, answer);
+    }
     return;
   }
 
-  // ⑦ 備品情報を教えてもらったか確認
-  let equipInfo;
-  try {
-    equipInfo = await extractEquipmentInfo(text);
-  } catch {
-    equipInfo = { found: false };
-  }
-
-  if (equipInfo?.found && equipInfo.item && equipInfo.location) {
-    postToGas({
-      type: 'equipment',
-      item:       equipInfo.item,
-      category:   equipInfo.category   || '',
-      quantity:   equipInfo.quantity   ?? '',
-      unit:       equipInfo.unit       || '',
-      location:   equipInfo.location,
-      department: equipInfo.department || '',
-      notes:      equipInfo.notes      || '',
-    }).catch(err => logger.error({ err: err.message }, 'GAS 備品登録失敗'));
-
-    const qty = equipInfo.quantity ? `${equipInfo.quantity}${equipInfo.unit || ''}` : '';
-    await safeReply(replyToken, userId,
-      `覚えたで！${equipInfo.item}${qty ? `（${qty}）` : ''} → ${equipInfo.location}やな🌱`);
+  // 4. 確定情報の登録（「〇〇に決まったよ」系）→ 確認返答
+  if (isDecisionMessage(body)) {
+    // extractAndSaveDecision はステルス処理で既に実行済み
+    // ジュニアに直接言った場合は「覚えたよ」と返す
+    await safeReply(replyToken, userId, `📚 覚えたよ！確定知識ベースに追加しておくね✨`);
     return;
-  }
-
-  // ⑧ ジュニア Q&A
-  try {
-    const [equipment, staff, vendors, artists, knowledge] = await Promise.all([
-      getSheetData('equipment'),
-      getSheetData('staff'),
-      getSheetData('vendor'),
-      getSheetData('artist'),
-      getSheetData('knowledge'),
-    ]);
-    const response = await generateJuniorResponse(text, groupName, { equipment, staff, vendors, artists, knowledge });
-    if (response) await safeReply(replyToken, userId, response);
-  } catch (err) {
-    logger.error({ err: err.message }, 'Junior応答失敗');
   }
 }
 
