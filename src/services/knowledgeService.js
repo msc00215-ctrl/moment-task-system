@@ -10,12 +10,8 @@ const { logger } = require('../utils/logger');
 const SS_MAIN = process.env.SPREADSHEET_ID || '1Drp8iWZ1n2YZRid3FqLnH1hzj_Ap5LQd46ZqKauucTY';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
-// キーワード → 読むべきシート のマッピング
+// 通常ジュニア用キーワードマップ（機密シートは除外）
 const SHEET_KEYWORD_MAP = [
-  {
-    keywords: ['コテージ', 'cottage', '号室', '棟', '宿泊', '部屋割'],
-    sheets: ['🏠 コテージ割り'],
-  },
   {
     keywords: ['ゲート', '音楽', '開場', '閉場', '音スタート', '音エンド', 'アルコール禁止'],
     sheets: ['🎵 ゲート・音楽時間'],
@@ -45,16 +41,25 @@ const SHEET_KEYWORD_MAP = [
     sheets: ['👥 ボランティア名簿'],
   },
   {
-    keywords: ['アーティスト', 'artist', 'DJ', '出演', 'performer', 'ライブ'],
-    sheets: ['🎤 アーティスト管理'],
-  },
-  {
     keywords: ['工程', '設営', '撤収', '日程', 'スケジュール', '段取り'],
     sheets: ['🟢 MOMENT設営 工程表', '📋 全体スケジュール'],
   },
   {
-    keywords: ['スタッフ', '担当', '入り時間', '到着', '連絡先'],
+    keywords: ['スタッフ', '担当', '入り時間', '到着'],
     sheets: ['👥 ボランティア名簿', '📋 全体スケジュール'],
+  },
+];
+
+// コアスタッフ専用キーワードマップ（機密シートを含む全シート）
+const CORE_SHEET_KEYWORD_MAP = [
+  ...SHEET_KEYWORD_MAP,
+  {
+    keywords: ['コテージ', 'cottage', '号室', '棟', '宿泊', '部屋割'],
+    sheets: ['🏠 コテージ割り'],
+  },
+  {
+    keywords: ['アーティスト', 'artist', 'DJ', '出演', 'performer', 'ライブ', 'ケア', 'rider'],
+    sheets: ['🎤 アーティスト管理'],
   },
 ];
 
@@ -88,36 +93,46 @@ async function readSheet(sheets, title, maxRows = 500) {
 }
 
 /**
- * 質問に応じた関連シートを丸ごと読んでコンテキストを返す
- * @param {string} question - ユーザーの質問文
- * @returns {Promise<string>}
+ * キーワードマップから関連シートを読み込む共通処理
  */
-async function getRelevantContext(question) {
-  const sheets = await getSheetsClient();
+async function readMatchedSheets(sheets, question, keywordMap) {
   const q = question || '';
-
-  // キーワードマッチで関連シートを特定
   const matched = new Set();
-  for (const { keywords, sheets: targets } of SHEET_KEYWORD_MAP) {
+  for (const { keywords, sheets: targets } of keywordMap) {
     if (keywords.some(kw => q.includes(kw))) {
       targets.forEach(t => matched.add(t));
     }
   }
-
-  // マッチしたシートを読む（全行）
   const sections = [];
   if (matched.size > 0) {
     for (const title of matched) {
       const text = await readSheet(sheets, title, 500);
       if (text) sections.push(text);
     }
-    logger.info({ matched: [...matched] }, 'Q&A: キーワードマッチシート読み込み');
+    logger.info({ matched: [...matched] }, 'Q&A: シート読み込み');
   }
+  return sections;
+}
 
-  // 確定知識ベースは常に追加（最大200行）
+/**
+ * 通常ジュニア用コンテキスト（機密シート除外）
+ */
+async function getRelevantContext(question) {
+  const sheets = await getSheetsClient();
+  const sections = await readMatchedSheets(sheets, question, SHEET_KEYWORD_MAP);
   const kbText = await readSheet(sheets, '📚 確定知識ベース', 200);
   if (kbText) sections.push(kbText);
+  return sections.join('\n\n');
+}
 
+/**
+ * コアスタッフ専用コンテキスト（機密シート含む全シート）
+ */
+async function getCoreContext(question) {
+  const sheets = await getSheetsClient();
+  const sections = await readMatchedSheets(sheets, question, CORE_SHEET_KEYWORD_MAP);
+  const kbText = await readSheet(sheets, '📚 確定知識ベース', 200);
+  if (kbText) sections.push(kbText);
   return sections.join('\n\n');
 }
 
@@ -163,4 +178,4 @@ function invalidateCache() {
   sheetCache.clear();
 }
 
-module.exports = { getKnowledgeContext, getRelevantContext, addEquipmentItem, invalidateCache };
+module.exports = { getKnowledgeContext, getRelevantContext, getCoreContext, addEquipmentItem, invalidateCache };

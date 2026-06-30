@@ -20,7 +20,7 @@
  */
 const { verifyLineSignature } = require('../middleware/lineSignature');
 const { extractTasks } = require('../services/openaiService');
-const { isQuestion, parseEquipmentRegister, answerQuestion } = require('../services/qaService');
+const { isQuestion, parseEquipmentRegister, answerQuestion, answerQuestionCore } = require('../services/qaService');
 const { addEquipmentItem } = require('../services/knowledgeService');
 const { extractAndSaveDecision, isDecisionMessage } = require('../services/decisionExtractor');
 const { reply } = require('../services/lineService');
@@ -29,9 +29,20 @@ const { assertRequired } = require('../config');
 const { logger } = require('../utils/logger');
 const { maskPII, checkRateLimit, isJuniorMention } = require('../utils/security');
 
+// 「コアジュニア」呼びかけ検出（コアスタッフ専用シークレットモード）
+function isCalledByCore(text) {
+  return /^コアジュニア[、,，\s！!]?/.test(text);
+}
+
+// 「コアジュニア、」プレフィックスを除いた本文を返す
+function stripCorePrefix(text) {
+  return text.replace(/^コアジュニア[、,，\s！!]*/, '').trim();
+}
+
 // 「ジュニア」と呼びかけているか（グループでの返答トリガー）
+// ※「コアジュニア」は別処理なのでここでは除外
 function isCalledByName(text) {
-  return /ジュニア[、,，\s！!]?/.test(text) || text.startsWith('ジュニア');
+  return /^ジュニア[、,，\s！!]?/.test(text) && !isCalledByCore(text);
 }
 
 // 「ジュニア、」プレフィックスを除いた本文を返す
@@ -154,7 +165,17 @@ async function handleSingleEvent(event) {
   }).catch(err => logger.warn({ err: err.message }, 'タスク抽出スキップ'));
 
   // ── 返答処理 ──────────────────────────────────────────────────
-  // グループ: 「ジュニア」呼びかけ時のみ / DM: 常時
+
+  // 【コアスタッフモード】「コアジュニア」呼びかけ時（グループ・DM共通）
+  if (isCalledByCore(text) && replyToken) {
+    const coreBody = stripCorePrefix(text);
+    logger.info({ textLen: coreBody.length }, 'コアスタッフモード起動');
+    const coreAnswer = await answerQuestionCore(coreBody);
+    if (coreAnswer) await safeReply(replyToken, userId, coreAnswer);
+    return;
+  }
+
+  // 【通常モード】グループ: 「ジュニア」呼びかけ時のみ / DM: 常時
   const called = isDM || isCalledByName(text);
   if (!called || !replyToken) return;
 
