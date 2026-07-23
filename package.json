@@ -13,9 +13,9 @@
     "lint": "eslint src/"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.113.0",
     "@line/bot-sdk": "^9.4.0",
     "express": "^4.21.0",
-    "openai": "^4.71.0",
     "pino": "^9.5.0"
   },
   "devDependencies": {

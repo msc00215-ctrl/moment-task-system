@@ -17,7 +17,7 @@ function requireEnv(key) {
 }
 
 const credentials = {
-  openaiApiKey: () => Promise.resolve(requireEnv('OPENAI_API_KEY')),
+  anthropicApiKey: () => Promise.resolve(requireEnv('ANTHROPIC_API_KEY')),
   lineChannelAccessToken: () => Promise.resolve(requireEnv('LINE_CHANNEL_ACCESS_TOKEN')),
   lineChannelSecret: () => Promise.resolve(requireEnv('LINE_CHANNEL_SECRET')),
   appsheetAccessKey: () => Promise.resolve(process.env.APPSHEET_ACCESS_KEY || ''),
@@ -28,7 +28,7 @@ function assertRequired() {
   if (!env.GAS_WEBHOOK_URL) missing.push('GAS_WEBHOOK_URL');
   if (!process.env.LINE_CHANNEL_ACCESS_TOKEN) missing.push('LINE_CHANNEL_ACCESS_TOKEN');
   if (!process.env.LINE_CHANNEL_SECRET) missing.push('LINE_CHANNEL_SECRET');
-  if (!process.env.OPENAI_API_KEY) missing.push('OPENAI_API_KEY');
+  if (!process.env.ANTHROPIC_API_KEY) missing.push('ANTHROPIC_API_KEY');
   if (missing.length > 0) throw new Error(`必須環境変数が未設定: ${missing.join(', ')}`);
 }
 

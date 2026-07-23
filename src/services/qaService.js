@@ -1,12 +1,12 @@
 /**
  * Q&A Service
  * LINEメッセージが「質問」かどうかを判定し、
- * スプレッドシートのデータを元にOpenAIが自然言語で回答する
+ * スプレッドシートのデータを元にClaudeが自然言語で回答する
  *
  * ■ 備品登録フロー
  *   スタッフが「備品登録: 品名, 場所, 数量」形式で送ると📦備品DBに自動追記
  */
-const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 const { credentials } = require('../config');
 const { withRetry } = require('../utils/retry');
 const { logger } = require('../utils/logger');
@@ -16,8 +16,8 @@ let cachedClient;
 
 async function getClient() {
   if (cachedClient) return cachedClient;
-  const apiKey = await credentials.openaiApiKey();
-  cachedClient = new OpenAI({ apiKey, timeout: 20_000 });
+  const apiKey = await credentials.anthropicApiKey();
+  cachedClient = new Anthropic({ apiKey });
   return cachedClient;
 }
 
@@ -86,21 +86,19 @@ async function answerQuestion(question, senderName = '') {
     const client = await getClient();
 
     const systemPrompt = QA_SYSTEM_PROMPT.replace('{KNOWLEDGE}', knowledge);
+    const userMessage = senderName ? `${senderName}：${question}` : question;
 
-    const completion = await withRetry(
-      () => client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: senderName ? `${senderName}：${question}` : question },
-        ],
-        temperature: 0.3,
+    const response = await withRetry(
+      () => client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 400,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: userMessage }],
       }),
       { retries: 2 }
     );
 
-    const answer = completion.choices?.[0]?.message?.content?.trim();
+    const answer = response.content?.[0]?.text?.trim();
     if (!answer) return null;
 
     return answer;

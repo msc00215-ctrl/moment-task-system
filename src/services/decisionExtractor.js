@@ -2,19 +2,9 @@
  * Decision Extractor
  * LINEメッセージから「決定事項・重要情報」を自動抽出して
  * 📚 確定知識ベース シートに追記する（複利型自動学習）
- *
- * 対象：
- *   - 「〜に決まりました」「確定です」「〜になります」系の決定報告
- *   - 「〜は〜です」「〜が〜になった」系の事実陳述
- *   - 数字・時刻・場所が含まれる情報共有
- *
- * 除外：
- *   - タスク抽出済みのメッセージ（重複防止）
- *   - 5文字以下の短文・挨拶・スタンプ
- *   - 「？」「?」を含む質問（Q&Aで処理済み）
  */
 
-const OpenAI = require('openai');
+const Anthropic = require('@anthropic-ai/sdk');
 const { getSheetsClient } = require('../utils/googleAuth');
 const { credentials } = require('../config');
 const { withRetry } = require('../utils/retry');
@@ -55,16 +45,16 @@ function detectCategory(text) {
 
 function isDecisionMessage(text) {
   if (!text || text.length < 10) return false;
-  if (text.includes('？') || text.includes('?')) return false; // 質問は除外
+  if (text.includes('？') || text.includes('?')) return false;
   return DECISION_MARKERS.some(marker => text.includes(marker));
 }
 
-let openaiClient;
-async function getOpenAI() {
-  if (openaiClient) return openaiClient;
-  const apiKey = await credentials.openaiApiKey();
-  openaiClient = new OpenAI({ apiKey, timeout: 15_000 });
-  return openaiClient;
+let claudeClient;
+async function getClaude() {
+  if (claudeClient) return claudeClient;
+  const apiKey = await credentials.anthropicApiKey();
+  claudeClient = new Anthropic({ apiKey });
+  return claudeClient;
 }
 
 let sheetsClient;
@@ -84,38 +74,32 @@ LINEメッセージから「確定した事実・決定事項」を抽出して�
 - タスク指示（「〜してください」）は抽出しない
 - 確定事項がなければ空文字列を返す
 
-【出力形式 - JSONのみ】
+【出力形式 - JSONのみ、コードブロック不要】
 {"fact": "抽出した事実（確定事項がない場合は空文字列）", "category": "カテゴリ名"}`;
 
 /**
  * LINEメッセージから決定事項を抽出してシートに保存
- * @param {string} text - メッセージ本文
- * @param {string} groupName - グループ名
- * @returns {Promise<boolean>} 保存したかどうか
  */
 async function extractAndSaveDecision(text, groupName) {
   if (!isDecisionMessage(text)) return false;
 
   try {
-    const openai = await getOpenAI();
-    const completion = await withRetry(
-      () => openai.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: EXTRACT_PROMPT },
-          { role: 'user', content: text },
-        ],
-        temperature: 0,
-        response_format: { type: 'json_object' },
+    const claude = await getClaude();
+    const response = await withRetry(
+      () => claude.messages.create({
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 200,
+        system: EXTRACT_PROMPT,
+        messages: [{ role: 'user', content: text }],
       }),
       { retries: 1 }
     );
 
-    const content = completion.choices?.[0]?.message?.content;
+    const content = response.content?.[0]?.text;
     if (!content) return false;
 
-    const parsed = JSON.parse(content);
+    const jsonStr = content.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+    const parsed = JSON.parse(jsonStr);
     const fact = parsed.fact?.trim();
     if (!fact) return false;
 
