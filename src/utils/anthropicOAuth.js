@@ -17,8 +17,15 @@ const TOKEN_ENDPOINT = 'https://claude.ai/oauth/token';
 let currentAccessToken = process.env.ANTHROPIC_OAUTH_ACCESS_TOKEN || '';
 let client = null;
 
-function buildClient(accessToken) {
-  return new Anthropic({ apiKey: accessToken });
+function buildOAuthClient(accessToken) {
+  return new Anthropic({
+    authToken: accessToken,
+    defaultHeaders: { 'anthropic-beta': 'oauth-2025-04-20' },
+  });
+}
+
+function buildApiKeyClient(apiKey) {
+  return new Anthropic({ apiKey });
 }
 
 async function refreshAccessToken() {
@@ -56,7 +63,7 @@ async function refreshAccessToken() {
     process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN = data.refresh_token;
   }
 
-  client = buildClient(currentAccessToken);
+  client = buildOAuthClient(currentAccessToken);
   logger.info('OAuthトークンのリフレッシュ完了');
   return client;
 }
@@ -71,13 +78,13 @@ async function getClient() {
 
   // OAuthアクセストークン直接指定
   if (currentAccessToken) {
-    client = buildClient(currentAccessToken);
+    client = buildOAuthClient(currentAccessToken);
     return client;
   }
 
   // 通常のAPIキーにフォールバック
   if (process.env.ANTHROPIC_API_KEY) {
-    client = buildClient(process.env.ANTHROPIC_API_KEY);
+    client = buildApiKeyClient(process.env.ANTHROPIC_API_KEY);
     return client;
   }
 
@@ -95,12 +102,12 @@ async function withTokenRefresh(fn) {
   try {
     return await fn(c);
   } catch (err) {
-    const isExpired =
-      err?.status === 401 &&
-      err?.error?.error?.type === 'authentication_error';
-    if (!isExpired) throw err;
+    const is401 = err?.status === 401 && err?.error?.error?.type === 'authentication_error';
+    const hasRefresh = process.env.ANTHROPIC_OAUTH_REFRESH_TOKEN && process.env.ANTHROPIC_OAUTH_CLIENT_ID;
+    if (!is401 || !hasRefresh) throw err;
 
     logger.warn('OAuthトークン期限切れ — 自動リフレッシュ');
+    client = null;
     const refreshed = await refreshAccessToken();
     return await fn(refreshed);
   }
