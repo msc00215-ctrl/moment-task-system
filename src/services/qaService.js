@@ -1,27 +1,12 @@
 /**
- * Q&A Service
- * LINEメッセージが「質問」かどうかを判定し、
- * スプレッドシートのデータを元にClaudeが自然言語で回答する
- *
- * ■ 備品登録フロー
- *   スタッフが「備品登録: 品名, 場所, 数量」形式で送ると📦備品DBに自動追記
+ * Q&A Service (Anthropic Claude / OAuth対応)
+ * OAuthトークンは期限切れ時に自動リフレッシュ
  */
-const Anthropic = require('@anthropic-ai/sdk');
-const { credentials } = require('../config');
+const { withTokenRefresh } = require('../utils/anthropicOAuth');
 const { withRetry } = require('../utils/retry');
 const { logger } = require('../utils/logger');
-const { getKnowledgeContext, getRelevantContext, addEquipmentItem } = require('./knowledgeService');
+const { getRelevantContext } = require('./knowledgeService');
 
-let cachedClient;
-
-async function getClient() {
-  if (cachedClient) return cachedClient;
-  const apiKey = await credentials.anthropicApiKey();
-  cachedClient = new Anthropic({ apiKey });
-  return cachedClient;
-}
-
-// 質問と判定するキーワード
 const QUESTION_MARKERS = [
   'どこ', 'どこに', 'どこの', 'どこで', 'どこへ',
   '何時', 'なんじ', 'いつ', '何時から', '何時まで',
@@ -34,20 +19,13 @@ const QUESTION_MARKERS = [
   '何', 'なに', 'どれ', 'どう',
 ];
 
-// 備品登録コマンドのパターン
 const EQUIPMENT_REGISTER_PATTERN = /^備品登録[：:]\s*(.+)$/m;
 
-/**
- * メッセージが質問かどうかを判定
- */
 function isQuestion(text) {
   if (!text) return false;
   return QUESTION_MARKERS.some(marker => text.includes(marker));
 }
 
-/**
- * 「備品登録: 品名, 場所, 数量[, 担当者][, 備考]」コマンドを解析
- */
 function parseEquipmentRegister(text) {
   const match = text.match(EQUIPMENT_REGISTER_PATTERN);
   if (!match) return null;
@@ -74,33 +52,27 @@ const QA_SYSTEM_PROMPT = `あなたはMOMENT 2026（奈良・洞川キャンプ�
 【スプレッドシートデータ】
 {KNOWLEDGE}`;
 
-/**
- * Q&A モードで回答を生成
- * @param {string} question - スタッフからの質問
- * @param {string} senderName - 送信者名（あれば）
- * @returns {Promise<string|null>} 回答文字列、またはnull（回答不要の場合）
- */
 async function answerQuestion(question, senderName = '') {
   try {
     const knowledge = await getRelevantContext(question);
-    const client = await getClient();
-
     const systemPrompt = QA_SYSTEM_PROMPT.replace('{KNOWLEDGE}', knowledge);
     const userMessage = senderName ? `${senderName}：${question}` : question;
 
     const response = await withRetry(
-      () => client.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 400,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userMessage }],
-      }),
+      () =>
+        withTokenRefresh(client =>
+          client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 400,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userMessage }],
+          })
+        ),
       { retries: 2 }
     );
 
     const answer = response.content?.[0]?.text?.trim();
     if (!answer) return null;
-
     return answer;
   } catch (err) {
     logger.error({ err: err.message }, 'Q&A 回答生成失敗');

@@ -1,22 +1,12 @@
 /**
- * AI Service (Anthropic Claude)
+ * AI Service (Anthropic Claude / OAuth対応)
  * - LINE 文章からタスク要素を JSON で抽出
- * - ANTHROPIC_API_KEY を使用（OAuthトークン不要・期限切れなし）
+ * - OAuthトークンは期限切れ時に自動リフレッシュ
  */
-const Anthropic = require('@anthropic-ai/sdk');
-const { credentials } = require('../config');
+const { withTokenRefresh } = require('../utils/anthropicOAuth');
 const { withRetry } = require('../utils/retry');
 const { logger } = require('../utils/logger');
 const { normalizeExtractedTask } = require('../utils/validator');
-
-let cachedClient;
-
-async function getClient() {
-  if (cachedClient) return cachedClient;
-  const apiKey = await credentials.anthropicApiKey();
-  cachedClient = new Anthropic({ apiKey });
-  return cachedClient;
-}
 
 const SYSTEM_PROMPT = `あなたはMOMENT 2026（奈良・洞川キャンプ場、7/3-5開催）の運営タスク管理AIです。
 LINEメッセージからタスク要素を抽出し、必ずJSONのみで返してください。説明文・前置き絶対禁止。
@@ -45,7 +35,7 @@ Yuto Saruwatari→シャトルバス
 - 複数タスクが含まれる場合は tasks 配列に個別で追加する
 - 雑談・挨拶・スタンプのみのメッセージは tasks を空配列で返す
 
-【出力形式 — JSONのみ】
+【出力形式 — JSONのみ、コードブロック不要】
 {
   "tasks": [
     {
@@ -60,23 +50,20 @@ Yuto Saruwatari→シャトルバス
   ]
 }`;
 
-/**
- * @param {string} text - LINE から受け取ったメッセージ本文
- * @returns {Promise<{ task, assignee, department, deadline, area, priority, status }[]>}
- */
 async function extractTasks(text) {
   if (!text || typeof text !== 'string') return [];
 
   try {
-    const client = await getClient();
     const response = await withRetry(
       () =>
-        client.messages.create({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 800,
-          system: SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: text }],
-        }),
+        withTokenRefresh(client =>
+          client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 800,
+            system: SYSTEM_PROMPT,
+            messages: [{ role: 'user', content: text }],
+          })
+        ),
       { retries: 2 },
     );
 
@@ -88,7 +75,6 @@ async function extractTasks(text) {
 
     let parsed;
     try {
-      // コードブロックを除去してパース
       const jsonStr = content.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
       parsed = JSON.parse(jsonStr);
     } catch (e) {

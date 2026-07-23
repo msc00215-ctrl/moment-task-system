@@ -1,19 +1,17 @@
 /**
- * Decision Extractor
+ * Decision Extractor (Anthropic Claude / OAuth対応)
  * LINEメッセージから「決定事項・重要情報」を自動抽出して
  * 📚 確定知識ベース シートに追記する（複利型自動学習）
  */
 
-const Anthropic = require('@anthropic-ai/sdk');
+const { withTokenRefresh } = require('../utils/anthropicOAuth');
 const { getSheetsClient } = require('../utils/googleAuth');
-const { credentials } = require('../config');
 const { withRetry } = require('../utils/retry');
 const { logger } = require('../utils/logger');
 
 const SS_MAIN = process.env.SPREADSHEET_ID || '1Drp8iWZ1n2YZRid3FqLnH1hzj_Ap5LQd46ZqKauucTY';
 const SHEET = '📚 確定知識ベース';
 
-// 決定・確定を示すキーワード
 const DECISION_MARKERS = [
   '決まりました', '決まった', 'に決定', '確定です', '確定しました', 'に確定',
   'になりました', 'になります', 'です！', 'でした！',
@@ -23,7 +21,6 @@ const DECISION_MARKERS = [
   '時間が決まりました', '場所が決まりました',
 ];
 
-// カテゴリ自動判定キーワード
 const CATEGORY_MAP = [
   { keywords: ['時間', '時刻', '〜時', '開始', '終了', 'スタート', 'ゲート'], cat: 'タイムスケジュール' },
   { keywords: ['場所', 'どこ', 'エリア', 'ゾーン', '会場', '倉庫', 'テント'], cat: '場所・配置' },
@@ -49,14 +46,6 @@ function isDecisionMessage(text) {
   return DECISION_MARKERS.some(marker => text.includes(marker));
 }
 
-let claudeClient;
-async function getClaude() {
-  if (claudeClient) return claudeClient;
-  const apiKey = await credentials.anthropicApiKey();
-  claudeClient = new Anthropic({ apiKey });
-  return claudeClient;
-}
-
 let sheetsClient;
 async function getSheets() {
   if (sheetsClient) return sheetsClient;
@@ -77,21 +66,20 @@ LINEメッセージから「確定した事実・決定事項」を抽出して�
 【出力形式 - JSONのみ、コードブロック不要】
 {"fact": "抽出した事実（確定事項がない場合は空文字列）", "category": "カテゴリ名"}`;
 
-/**
- * LINEメッセージから決定事項を抽出してシートに保存
- */
 async function extractAndSaveDecision(text, groupName) {
   if (!isDecisionMessage(text)) return false;
 
   try {
-    const claude = await getClaude();
     const response = await withRetry(
-      () => claude.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 200,
-        system: EXTRACT_PROMPT,
-        messages: [{ role: 'user', content: text }],
-      }),
+      () =>
+        withTokenRefresh(client =>
+          client.messages.create({
+            model: 'claude-haiku-4-5-20251001',
+            max_tokens: 200,
+            system: EXTRACT_PROMPT,
+            messages: [{ role: 'user', content: text }],
+          })
+        ),
       { retries: 1 }
     );
 
