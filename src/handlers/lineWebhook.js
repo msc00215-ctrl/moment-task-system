@@ -14,16 +14,17 @@
  * └──────────────────────────────────────────────────┘
  *
  * 返答の優先順位:
- *  1. 備品登録（コマンド or 自然言語）
- *  2. Q&A（質問に回答）
- *  3. 確定情報登録（「〇〇に決まったよ」系）→「覚えたよ！」と返す
+ *  1. メンバーリスト取得
+ *  2. 備品登録（コマンド or 自然言語）
+ *  3. Q&A（質問に回答）
+ *  4. 確定情報登録（「〇〇に決まったよ」系）→「覚えたよ！」と返す
  */
 const { verifyLineSignature } = require('../middleware/lineSignature');
 const { extractTasks } = require('../services/openaiService');
 const { isQuestion, parseEquipmentRegister, answerQuestion } = require('../services/qaService');
 const { addEquipmentItem } = require('../services/knowledgeService');
 const { extractAndSaveDecision, isDecisionMessage } = require('../services/decisionExtractor');
-const { reply } = require('../services/lineService');
+const { reply, getGroupMembers } = require('../services/lineService');
 const { postToGas } = require('../services/gasService');
 const { assertRequired } = require('../config');
 const { logger } = require('../utils/logger');
@@ -134,7 +135,27 @@ async function handleSingleEvent(event) {
   // 「ジュニア、」を除いた本文で処理
   const body = isDM ? text : stripPrefix(text);
 
-  // 1. 備品登録（コマンド形式）「備品登録: テント, Bエリア, 10張」
+  // 1. メンバーリスト取得「メンバーリスト」「メンバー一覧」
+  if (/メンバー(?:リスト|一覧)/.test(body) && groupId) {
+    try {
+      logger.info({ groupId }, 'メンバーリスト取得リクエスト');
+      const members = await getGroupMembers(groupId);
+
+      const list = members
+        .map((m, i) => `${i + 1}. ${m.displayName}`)
+        .join('\n');
+
+      const message = `👥 グループメンバー（${members.length}名）\n\n${list}`;
+      await safeReply(replyToken, userId, message);
+      return;
+    } catch (err) {
+      logger.error({ err: err.message }, 'メンバーリスト取得エラー');
+      await safeReply(replyToken, userId, '❌ メンバーリスト取得に失敗しました。時間を置いて試してください。');
+      return;
+    }
+  }
+
+  // 2. 備品登録（コマンド形式）「備品登録: テント, Bエリア, 10張」
   const equipCmd = parseEquipmentRegister(body);
   if (equipCmd) {
     const ok = await addEquipmentItem({
@@ -154,7 +175,7 @@ async function handleSingleEvent(event) {
     return;
   }
 
-  // 2. 備品登録（自然言語）「テント（10張）はBエリアに置いてあるよ」
+  // 3. 備品登録（自然言語）「テント（10張）はBエリアに置いてあるよ」
   if (body.includes('あるよ') || body.includes('置いてある') || body.includes('保管')) {
     const equipNat = parseEquipmentNatural(body);
     if (equipNat && equipNat.name && equipNat.location) {
@@ -175,7 +196,7 @@ async function handleSingleEvent(event) {
     }
   }
 
-  // 3. Q&A（質問に回答）
+  // 4. Q&A（質問に回答）
   if (isQuestion(body) || isDM) {
     logger.info({ textLen: body.length }, '質問メッセージ → Q&Aモード');
     const answer = await answerQuestion(body);
@@ -185,7 +206,7 @@ async function handleSingleEvent(event) {
     return;
   }
 
-  // 4. 確定情報の登録（「〇〇に決まったよ」系）→ 確認返答
+  // 5. 確定情報の登録（「〇〇に決まったよ」系）→ 確認返答
   if (isDecisionMessage(body)) {
     // extractAndSaveDecision はステルス処理で既に実行済み
     // ジュニアに直接言った場合は「覚えたよ」と返す
