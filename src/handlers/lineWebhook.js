@@ -194,7 +194,7 @@ async function handleSingleEvent(event) {
     });
   }).catch(err => logger.warn({ err: err.message }, 'タスク抽出スキップ'));
 
-  // 賄い確認数の記録（ステルス — 「昼/夜 グループ名 人数」形式を検知）
+  // 賄い確認数の記録（「昼/夜 グループ名 人数」形式を検知 → 登録＋確認返信）
   const mealConf = parseMealConfirmation(text);
   if (mealConf) {
     const jstDate = new Date(event.timestamp || Date.now())
@@ -210,6 +210,17 @@ async function handleSingleEvent(event) {
       userId,
       timestamp,
     }).catch(err => logger.error({ err: err.message }, 'GAS 賄い確認送信失敗'));
+
+    // ジュニアメンションがなくても登録確認を返す
+    if (replyToken) {
+      const mealEmoji = mealConf.mealTime === '昼' ? '🌞' : '🌙';
+      await safeReply(replyToken, userId,
+        `${mealEmoji} ${mealConf.mealTime}の${mealConf.group} ${mealConf.count}名、登録したで！✅\n` +
+        `11:30に集計結果をまとめて送るな🍱`
+          .replace('11:30', mealConf.mealTime === '昼' ? '11:30' : '17:30')
+      );
+      return;
+    }
   }
 
   // ── 返答処理 ──────────────────────────────────────────────────
