@@ -132,6 +132,141 @@ function morningTaskReport() {
 }
 
 // ─────────────────────────────────────────────────
+// 1b. 朝9時: 昼の賄い確認リクエスト（イベント当日のみ）
+// ─────────────────────────────────────────────────
+function morningMealConfirmRequest() {
+  const token   = NOTIF_TOKEN();
+  const groupId = NOTIF_GROUP_ID();
+  if (!token || !groupId) return;
+
+  const now     = _nowJST();
+  const dateKey = _fmtSlash(now);
+  if (!MEAL_DATA[dateKey]) return; // イベント日以外はスルー
+
+  const planned = MEAL_DATA[dateKey]['12:00'];
+  const total   = planned.moment + planned.staff + planned.vol;
+
+  _notifyText(token, groupId, [
+    `🍱 12時の賄い確認！`,
+    `━━━━━━━━━━━━━━━`,
+    `各チームリーダーは↓の形式で教えてな`,
+    ``,
+    `「昼 MOMENT (人数)」`,
+    `「昼 公式スタッフ (人数)」`,
+    `「昼 ボランティア (人数)」`,
+    ``,
+    `📊 予定人数（変更なければ返信不要）`,
+    `  MOMENTメンバー: ${planned.moment}名`,
+    `  公式スタッフ:   ${planned.staff}名`,
+    `  ボランティア:   ${planned.vol}名`,
+    `  ━━ 予定合計: ${total}名`,
+    ``,
+    `※アーティスト分は別途カウントして！`,
+  ].join('\n'));
+}
+
+// ─────────────────────────────────────────────────
+// 1c. 11:30: 昼の賄い確認サマリー
+// ─────────────────────────────────────────────────
+function mealSummaryLunch() {
+  _sendMealSummary('昼', '12:00');
+}
+
+// ─────────────────────────────────────────────────
+// 1d. 15:00: 夜の賄い確認リクエスト（イベント当日のみ）
+// ─────────────────────────────────────────────────
+function afternoonMealConfirmRequest() {
+  const token   = NOTIF_TOKEN();
+  const groupId = NOTIF_GROUP_ID();
+  if (!token || !groupId) return;
+
+  const now     = _nowJST();
+  const dateKey = _fmtSlash(now);
+  if (!MEAL_DATA[dateKey]) return;
+
+  const planned = MEAL_DATA[dateKey]['18:00'];
+  const total   = planned.moment + planned.staff + planned.vol;
+
+  _notifyText(token, groupId, [
+    `🍱 18時の賄い確認！`,
+    `━━━━━━━━━━━━━━━`,
+    `各チームリーダーは↓の形式で教えてな`,
+    ``,
+    `「夜 MOMENT (人数)」`,
+    `「夜 公式スタッフ (人数)」`,
+    `「夜 ボランティア (人数)」`,
+    ``,
+    `📊 予定人数（変更なければ返信不要）`,
+    `  MOMENTメンバー: ${planned.moment}名`,
+    `  公式スタッフ:   ${planned.staff}名`,
+    `  ボランティア:   ${planned.vol}名`,
+    `  ━━ 予定合計: ${total}名`,
+    planned.note ? `\n⚠️ ${planned.note}` : '',
+  ].filter(Boolean).join('\n'));
+}
+
+// ─────────────────────────────────────────────────
+// 1e. 17:30: 夜の賄い確認サマリー
+// ─────────────────────────────────────────────────
+function mealSummaryDinner() {
+  _sendMealSummary('夜', '18:00');
+}
+
+// ── 賄い確認サマリー共通処理 ─────────────────────
+function _sendMealSummary(mealLabel, plannedKey) {
+  const token   = NOTIF_TOKEN();
+  const groupId = NOTIF_GROUP_ID();
+  if (!token || !groupId) return;
+
+  const now     = _nowJST();
+  const dateKey = _fmtSlash(now);
+  if (!MEAL_DATA[dateKey]) return;
+
+  const planned  = MEAL_DATA[dateKey][plannedKey];
+  const ss       = SpreadsheetApp.openById(NOTIF_SS_ID);
+  const confirms = _readMealConfirmations(ss, dateKey, mealLabel);
+
+  // 確認済みがなければ予定数で送信
+  const moment = confirms['MOMENT']         ?? planned.moment;
+  const staff  = confirms['公式スタッフ']   ?? planned.staff;
+  const vol    = confirms['ボランティア']   ?? planned.vol;
+  const total  = moment + staff + vol;
+
+  const momentTag = confirms['MOMENT']       ? '✅' : '📋予定';
+  const staffTag  = confirms['公式スタッフ'] ? '✅' : '📋予定';
+  const volTag    = confirms['ボランティア'] ? '✅' : '📋予定';
+
+  const emoji = mealLabel === '昼' ? '🌞 昼 12:00' : '🌙 夜 18:00';
+  _notifyText(token, groupId, [
+    `🍱 賄い確定人数 — ${dateKey} ${emoji}`,
+    `━━━━━━━━━━━━━━━`,
+    `${momentTag} MOMENTメンバー: ${moment}名`,
+    `${staffTag}  公式スタッフ:   ${staff}名`,
+    `${volTag}  ボランティア:   ${vol}名`,
+    `━━━━━━━━━━━━━━━`,
+    `🔢 合計: ${total}名`,
+    ``,
+    `※アーティスト分（約20〜35名）は別途！`,
+    total !== (planned.moment + planned.staff + planned.vol)
+      ? `⚠️ 予定(${planned.moment + planned.staff + planned.vol}名)から変更あり`
+      : `（予定通り）`,
+  ].join('\n'));
+}
+
+function _readMealConfirmations(ss, dateStr, mealTime) {
+  const sh = ss.getSheetByName('🍱 賄い確認');
+  if (!sh) return {};
+  const rows   = sh.getDataRange().getValues();
+  const result = {};
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][1] === dateStr && rows[i][2] === mealTime) {
+      result[rows[i][3]] = Number(rows[i][4]);
+    }
+  }
+  return result;
+}
+
+// ─────────────────────────────────────────────────
 // 2. 毎時チェック: 12:00・18:00に賄い通知（イベント当日のみ）
 // ─────────────────────────────────────────────────
 function hourlyEventCheck() {
@@ -283,18 +418,38 @@ function archiveCompletedTasks() {
 // トリガー一括セットアップ（手動で1回だけ実行）
 // ─────────────────────────────────────────────────
 function setupAllTriggers() {
-  const MANAGED = ['morningTaskReport', 'hourlyEventCheck', 'dayBeforeReminder', 'archiveCompletedTasks'];
+  const MANAGED = [
+    'morningTaskReport', 'morningMealConfirmRequest',
+    'mealSummaryLunch', 'afternoonMealConfirmRequest', 'mealSummaryDinner',
+    'hourlyEventCheck', 'dayBeforeReminder', 'archiveCompletedTasks',
+  ];
 
   // 既存の管理対象トリガーを全削除してから再登録
   ScriptApp.getProjectTriggers().forEach(t => {
     if (MANAGED.includes(t.getHandlerFunction())) ScriptApp.deleteTrigger(t);
   });
 
-  // 1. 毎朝9時: タスクリマインダー
+  // 1a. 毎朝9時: タスクリマインダー
   ScriptApp.newTrigger('morningTaskReport')
     .timeBased().everyDays(1).atHour(9).create();
 
-  // 2. 毎時0分: 12:00・18:00の賄い通知
+  // 1b. 毎朝9時: 昼の賄い確認リクエスト（atHour+nearMinute で9:05頃）
+  ScriptApp.newTrigger('morningMealConfirmRequest')
+    .timeBased().everyDays(1).atHour(9).nearMinute(5).create();
+
+  // 1c. 11:30: 昼の賄い確認サマリー
+  ScriptApp.newTrigger('mealSummaryLunch')
+    .timeBased().everyDays(1).atHour(11).nearMinute(30).create();
+
+  // 1d. 15:00: 夜の賄い確認リクエスト
+  ScriptApp.newTrigger('afternoonMealConfirmRequest')
+    .timeBased().everyDays(1).atHour(15).create();
+
+  // 1e. 17:30: 夜の賄い確認サマリー
+  ScriptApp.newTrigger('mealSummaryDinner')
+    .timeBased().everyDays(1).atHour(17).nearMinute(30).create();
+
+  // 2. 毎時: 12:00・18:00の賄い開始通知
   ScriptApp.newTrigger('hourlyEventCheck')
     .timeBased().everyHours(1).create();
 

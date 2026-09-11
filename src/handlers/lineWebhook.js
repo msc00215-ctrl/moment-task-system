@@ -194,6 +194,24 @@ async function handleSingleEvent(event) {
     });
   }).catch(err => logger.warn({ err: err.message }, 'タスク抽出スキップ'));
 
+  // 賄い確認数の記録（ステルス — 「昼/夜 グループ名 人数」形式を検知）
+  const mealConf = parseMealConfirmation(text);
+  if (mealConf) {
+    const jstDate = new Date(event.timestamp || Date.now())
+      .toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit', day: '2-digit' })
+      .split(' ')[0];
+    postToGas({
+      type:      'mealConfirm',
+      mealTime:  mealConf.mealTime,
+      group:     mealConf.group,
+      count:     mealConf.count,
+      date:      jstDate,
+      groupName,
+      userId,
+      timestamp,
+    }).catch(err => logger.error({ err: err.message }, 'GAS 賄い確認送信失敗'));
+  }
+
   // ── 返答処理 ──────────────────────────────────────────────────
 
   // 【コアスタッフモード】「コアジュニア」呼びかけ時（グループ・DM共通）
@@ -308,6 +326,38 @@ async function safeReply(replyToken, userId, text) {
   } catch (err) {
     logger.error({ err: err.message }, 'reply 失敗');
   }
+}
+
+/**
+ * 賄い確認フォーマットを検出する（OpenAI不要・正規表現で処理）
+ * 対応形式: 「昼 MOMENT 6」「夜 公式 25名」「#昼 ボランティア 98人」等
+ * @param {string} text
+ * @returns {{ mealTime: '昼'|'夜', group: string, count: number }|null}
+ */
+function parseMealConfirmation(text) {
+  // 食事回を検出: 昼|12時|午前 → '昼' / 夜|18時|夕 → '夜'
+  const mealMatch = text.match(/[#＃]?\s*(?:(昼|12時|ひる|午昼)|(夜|18時|よる|夕))/);
+  if (!mealMatch) return null;
+  const mealTime = mealMatch[1] ? '昼' : '夜';
+
+  // グループ名を検出
+  let group = null;
+  if (/moment|もーめん/i.test(text)) {
+    group = 'MOMENT';
+  } else if (/公式|official|スタッフ/i.test(text)) {
+    group = '公式スタッフ';
+  } else if (/ボランティア|vol\b|ぼらんてぃあ/i.test(text)) {
+    group = 'ボランティア';
+  }
+  if (!group) return null;
+
+  // 人数を検出（グループ名の後に続く数字）
+  const numMatch = text.match(/(\d+)\s*(?:名|人|にん)?/);
+  if (!numMatch) return null;
+  const count = parseInt(numMatch[1], 10);
+  if (isNaN(count) || count <= 0 || count > 500) return null;
+
+  return { mealTime, group, count };
 }
 
 module.exports = { handleWebhook };

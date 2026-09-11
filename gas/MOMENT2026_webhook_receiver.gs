@@ -73,6 +73,8 @@ function doPost(e) {
     } else if (data.type === 'restore') {
       // 「現状の状態に戻れるように！！！」コマンドで全シートを再構築
       setupAllNewSheets_v2();
+    } else if (data.type === 'mealConfirm') {
+      upsertMealConfirmation(ss, data);
     }
 
     return jsonResponse({ ok: true });
@@ -724,4 +726,64 @@ function setupHubSheet(ss) {
 
   sheet.setRowHeight(24, 20);
   console.log('🏠 HUBシート作成完了');
+}
+
+// ─────────────────────────────────────────────
+// 🍱 賄い確認数の記録 (type: 'mealConfirm')
+// ─────────────────────────────────────────────
+const SHEET_MEAL_CONFIRM = '🍱 賄い確認';
+const MEAL_CONFIRM_HEADERS = ['記録日時', '日付', '食事回', 'グループ', '確認人数', 'グループ名', 'ユーザーID'];
+
+function upsertMealConfirmation(ss, data) {
+  const sh = _getMealConfirmSheet(ss);
+  const rows = sh.getDataRange().getValues();
+
+  // 同じ日付・食事回・グループの行を上書き
+  const dateStr  = data.date  || _todayJST();
+  const mealTime = data.mealTime || '';
+  const group    = data.group    || '';
+
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][1] === dateStr && rows[i][2] === mealTime && rows[i][3] === group) {
+      sh.getRange(i + 1, 1, 1, 7).setValues([[
+        new Date().toISOString(), dateStr, mealTime, group,
+        data.count, data.groupName || '', data.userId || '',
+      ]]);
+      return;
+    }
+  }
+
+  // 新規追加
+  sh.appendRow([
+    new Date().toISOString(), dateStr, mealTime, group,
+    data.count, data.groupName || '', data.userId || '',
+  ]);
+}
+
+function getMealConfirmations(ss, dateStr, mealTime) {
+  const sh = _getMealConfirmSheet(ss);
+  const rows = sh.getDataRange().getValues();
+  const result = {};
+  for (let i = 1; i < rows.length; i++) {
+    if (rows[i][1] === dateStr && rows[i][2] === mealTime) {
+      result[rows[i][3]] = Number(rows[i][4]);
+    }
+  }
+  return result; // { 'MOMENT': 6, '公式スタッフ': 25, ... }
+}
+
+function _getMealConfirmSheet(ss) {
+  let sh = ss.getSheetByName(SHEET_MEAL_CONFIRM);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_MEAL_CONFIRM);
+    sh.getRange(1, 1, 1, MEAL_CONFIRM_HEADERS.length).setValues([MEAL_CONFIRM_HEADERS]);
+    sh.setFrozenRows(1);
+    sh.setTabColor('#1B7B2C');
+  }
+  return sh;
+}
+
+function _todayJST() {
+  const d = new Date(new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' }));
+  return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`;
 }
